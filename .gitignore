@@ -1,7 +1,10 @@
 # game data and everything derived from it stays out of the repo
 game/
 gamedata/
-re/
+re/*
+!re/sgens/
+re/sgens/*
+!re/sgens/functions.tsv
 shots/
 build/
 *.exe
@@ -15,3 +18,5 @@ installer/*.exe
 graphify-out/
 testroot/
 prof.txt
+__pycache__/
+camlog.txt
