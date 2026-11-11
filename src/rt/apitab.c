@@ -258,6 +258,7 @@ void api_lstrcmpiA(void);
 void api_lstrcpyA(void);
 void api_lstrcpynA(void);
 void api_lstrlenA(void);
+void api_stats_dump(void);
 void api_timeGetDevCaps(void);
 void api_wvsprintfA(void);
 
@@ -520,6 +521,7 @@ const ApiEnt api_tab_rt[] = {
     {"lstrcpyA", api_lstrcpyA},
     {"lstrcpynA", api_lstrcpynA},
     {"lstrlenA", api_lstrlenA},
+    {"stats_dump", api_stats_dump},
     {"timeGetDevCaps", api_timeGetDevCaps},
     {"wvsprintfA", api_wvsprintfA},
     {0, 0}

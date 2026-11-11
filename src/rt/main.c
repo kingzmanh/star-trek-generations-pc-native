@@ -167,6 +167,9 @@ const char *thunk_name_of(u32 a)
 }
 
 static int trace_api = -1;
+static int api_stat_on;
+static s64 *api_time;
+static u32 *api_calls;
 
 static void call_thunk(u32 target, u32 at)
 {
@@ -182,7 +185,32 @@ static void call_thunk(u32 target, u32 at)
         rt_log(" -> %08x [%d] esp+%d\n", cpu.r[R_EAX], th, (int)(cpu.r[R_ESP] - sp));
         return;
     }
+    if (api_stat_on) {   /* <ENV>APISTAT: host time spent in each native (other threads' turns included) */
+        LARGE_INTEGER a, b;
+        QueryPerformanceCounter(&a);
+        fn();
+        QueryPerformanceCounter(&b);
+        if (!api_time) { api_time = calloc(NTHUNK, sizeof *api_time); api_calls = calloc(NTHUNK, sizeof *api_calls); }
+        api_time[i] += b.QuadPart - a.QuadPart;
+        api_calls[i]++;
+        return;
+    }
     fn();
+}
+
+void api_stats_dump(void)
+{
+    if (!api_time) return;
+    LARGE_INTEGER f;
+    QueryPerformanceFrequency(&f);
+    for (int k = 0; k < 20; k++) {
+        u32 best = 0;
+        for (u32 i = 1; i < NTHUNK; i++) if (api_time[i] > api_time[best]) best = i;
+        if (!api_time[best]) break;
+        rt_log("apistat %-40s %8.1f ms %8u calls\n", thunk_name[best] ? thunk_name[best] : "?",
+               api_time[best] * 1000.0 / f.QuadPart, api_calls[best]);
+        api_time[best] = 0;
+    }
 }
 
 void (*rt_lookup(u32 addr))(void)
@@ -318,6 +346,7 @@ int main(int argc, char **argv)
     rt_logf = fopen(logp, "w");
     rt_log(GAME_TITLE " - PC native runtime\nroot: %s\n", rt_root);
     trace_api = getenv(ENV("TRACEAPI")) != NULL;
+    api_stat_on = getenv(ENV("APISTAT")) != NULL;
     if (getenv(ENV("HIDDEN"))) SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX | SEM_NOOPENFILEERRORBOX);
 
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_TIMER) < 0) rt_fatal("SDL: %s", SDL_GetError());

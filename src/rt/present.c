@@ -35,7 +35,7 @@ static int ov_w, ov_h;
 static IDirect3DSurface9 *aa_surf, *up_surf;
 static UINT up_w, up_h;
 static IDirect3DVertexShader9 *vs_blit;
-static IDirect3DPixelShader9 *ps_copy, *ps_bicubic, *ps_sharpbil, *ps_fxaa, *ps_sharpen, *ps_over, *ps_xbr;
+static IDirect3DPixelShader9 *ps_alpha, *ps_copy, *ps_bicubic, *ps_sharpbil, *ps_fxaa, *ps_sharpen, *ps_over, *ps_xbr;
 static IDirect3DVertexDeclaration9 *blit_decl;
 static int d3d_ok;
 
@@ -143,6 +143,10 @@ static const char *PS_XBR =
 static const char *PS_OVER =
     "sampler2D s : register(s0);\n"
     "float4 main(float2 t : TEXCOORD0) : COLOR { return tex2D(s, t); }\n";
+/* the N x 3D layer: colour and coverage as they are (premultiplied) */
+static const char *PS_ALPHA =
+    "sampler2D s : register(s0);"
+    "float4 main(float2 t : TEXCOORD0) : COLOR { return tex2D(s, t); }";
 static const char *PS_COPY =
     "sampler2D s : register(s0);\n"
     "float4 main(float2 t : TEXCOORD0) : COLOR { return float4(tex2D(s, t).rgb, 1); }\n";
@@ -263,6 +267,7 @@ static int d3d_init(void)
     void *bc = compile(VS_BLIT, "vs_3_0", &n);
     if (bc) { IDirect3DDevice9_CreateVertexShader(dev, (const DWORD *)bc, &vs_blit); free(bc); }
     ps_copy = mk_ps(PS_COPY);
+    ps_alpha = mk_ps(PS_ALPHA);
     ps_bicubic = mk_ps(PS_BICUBIC);
     ps_sharpbil = mk_ps(PS_SHARPBIL);
     ps_fxaa = mk_ps(PS_FXAA);
@@ -322,7 +327,8 @@ static int pic_w = 640, pic_h = 480;   /* shape of the picture being shown (a fi
 void present_dest_rect(int cw, int ch, int *dx, int *dy, int *dw, int *dh)
 {
     *dx = 0; *dy = 0; *dw = cw; *dh = ch;
-    if (opt_aspect == 0) {
+    /* a movie filling the screen (not 4:3) always fits the window, whatever the aspect setting */
+    if (opt_aspect == 0 || pic_w * 3 != pic_h * 4) {
         if (cw * pic_h > ch * pic_w) { *dw = ch * pic_w / pic_h; *dx = (cw - *dw) / 2; }
         else { *dh = cw * pic_h / pic_w; *dy = (ch - *dh) / 2; }
     } else if (opt_aspect == 2) {
@@ -422,7 +428,7 @@ int present_rgb(const u32 *pix, int sw, int sh)
         IDirect3DSurface9_Release(s);
     }
     /* the N x 3D layer (hires_dre.c): over its rectangle, alpha = where it shows */
-    if (hires_layer.valid && vs_blit && ps_copy && up_surf) {
+    if (hires_layer.valid && vs_blit && ps_alpha && up_surf) {
         if (ov_tex && (ov_w != hires_layer.w || ov_h != hires_layer.h)) { IDirect3DTexture9_Release(ov_tex); ov_tex = NULL; }
         if (!ov_tex && SUCCEEDED(IDirect3DDevice9_CreateTexture(dev, hires_layer.w, hires_layer.h, 1, D3DUSAGE_DYNAMIC, D3DFMT_A8R8G8B8, D3DPOOL_DEFAULT, &ov_tex, NULL))) {
             ov_w = hires_layer.w; ov_h = hires_layer.h;
@@ -435,9 +441,9 @@ int present_rgb(const u32 *pix, int sw, int sh)
             int vx1 = dx + (hires_layer.x + hires_layer.rw) * dw / sw, vy1 = dy + (hires_layer.y + hires_layer.rh) * dh / sh;
             D3DVIEWPORT9 vo = {(DWORD)vx0, (DWORD)vy0, (DWORD)(vx1 - vx0), (DWORD)(vy1 - vy0), 0, 1};
             IDirect3DDevice9_SetRenderState(dev, D3DRS_ALPHABLENDENABLE, TRUE);
-            IDirect3DDevice9_SetRenderState(dev, D3DRS_SRCBLEND, D3DBLEND_SRCALPHA);
+            IDirect3DDevice9_SetRenderState(dev, D3DRS_SRCBLEND, D3DBLEND_ONE);   /* transparent texels are 0,0,0,0 */
             IDirect3DDevice9_SetRenderState(dev, D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
-            blit(ov_tex, ov_w, ov_h, ps_copy, vo, 1);
+            blit(ov_tex, ov_w, ov_h, ps_alpha, vo, 1);
             IDirect3DDevice9_SetRenderState(dev, D3DRS_ALPHABLENDENABLE, FALSE);
         }
     }

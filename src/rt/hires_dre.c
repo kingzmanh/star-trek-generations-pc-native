@@ -64,6 +64,13 @@ void N_dre_render(void)
     if (n < 2) { frame_n = 1; orig(); return; }
     int W = base_w * n, H = base_h * n;
     VirtualAlloc(MEM + HR_BUF, (size_t)W * H + 0x10000, MEM_COMMIT, PAGE_READWRITE);
+    if (dre_hires_debug) {   /* what the game left in its buffer before DRE draws */
+        static int nlog;
+        int nz = 0;
+        for (int y = base_h - 40; y < base_h; y++)
+            for (int x = base_w / 2 - 40; x < base_w / 2 + 40; x++) nz += RD8(lo_buf + (u32)y * lo_pitch + x) != 0;
+        if (nlog++ < 5) rt_log("dre: before render %d non-zero pixels at the weapon spot\n", nz);
+    }
     u32 sp = cpu.r[R_ESP];
     WR32(sp + 4, HR_BUF);
     WR32(sp + 8, (u32)W);
@@ -79,6 +86,20 @@ void N_dre_render(void)
     for (int y = 0; y < base_h; y++) memcpy(lo_copy + y * base_w, MEM + lo_buf + (u32)y * lo_pitch, base_w);
     frame_ms = now_ms();
     dst_mem = 0;
+}
+
+/* 4bc740 (fastcall x, y): the screen point DRE picks / aims at (phaser
+   fire, using things).  The game gives it in its own 1x view coordinates;
+   DRE's screen is N x - aim at the centre of the same N x N block. */
+void N_dre_pick(void)
+{
+    int n = set_n;
+    if (n > 1) {
+        s32 x = (s32)cpu.r[R_ECX], y = (s32)cpu.r[R_EDX];
+        if (x >= 0) cpu.r[R_ECX] = (u32)(x * n + n / 2);
+        if (y >= 0) cpu.r[R_EDX] = (u32)(y * n + n / 2);
+    }
+    rt_wrap_orig("N_dre_pick", NULL)();
 }
 
 /* ddraw.c: every blit.  The DRE picture goes to an offscreen composite
@@ -132,6 +153,14 @@ void dre_compose(u32 mem, int pitch, const u32 *pal)
         }
     }
     if (!any) return;
+    if (dre_hires_debug) {
+        static int nlog;
+        int x = base_w / 2 + 10, y = base_h - 15;
+        if (nlog++ < 6)
+            rt_log("dre: weapon spot screen %02x lo_copy %02x lo_buf %02x hr %02x\n",
+                   RD8(mem + (u32)(dst_y + y) * pitch + dst_x + x), lo_copy[y * base_w + x],
+                   RD8(lo_buf + (u32)y * lo_pitch + x), RD8(HR_BUF + (u32)((y * n + n / 2) * W + x * n + n / 2)));
+    }
     hires_layer = (HiresLayer){ layer, W, H, dst_x, dst_y, base_w, base_h, 1 };
     static int shot_done;
     const char *hs = getenv(ENV("HRSHOT"));

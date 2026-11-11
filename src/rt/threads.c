@@ -264,6 +264,15 @@ static void api_Sleep(void)
     u32 ms = ARG(0);
     u32 until = now_ms() + ms;
     timers_poll();
+    if (!ms) {   /* Sleep(0): give the other threads a turn, never wait a whole tick */
+        static u32 n0;
+        if ((++n0 % 200000) == 0 && getenv(ENV("SLEEPDEBUG")))
+            rt_log("sleep(0) #%u thread %d from %08x, caller %08x\n", n0, cur, RD32(cpu.r[R_ESP]), RD32(cpu.r[R_EBP] + 4));
+        if (cur == 0) win_pump(0);
+        thr_yield();
+        RET(0, 1);
+    }
+    if (ms >= 20 && getenv(ENV("SLEEPDEBUG"))) rt_log("sleep %u ms thread %d from %08x\n", ms, cur, RD32(cpu.r[R_ESP]));
     thr[cur].blocked = 1;
     do {
         if (cur == 0) win_pump(0);

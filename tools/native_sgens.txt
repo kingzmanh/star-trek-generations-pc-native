@@ -6,3 +6,8 @@
 4e7eb0 N_sp_window wrap
 4e2d70 N_sp_begin wrap
 494b64 N_sp_convert wrap
+4bc740 N_dre_pick wrap
+# movies: where the player copies each frame (ddraw.c full-colour / fill)
+4ca62f N_movie_copy wrap
+# game tweaks: src/rt/game_tweaks.c
+4d6b16 N_sound_playing wrap

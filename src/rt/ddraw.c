@@ -85,17 +85,40 @@ static int movie_match_at(const u8 *base, int pitch, int y, const u32 *mf, int m
 }
 
 extern int opt_moviefull;
+/* 4ca62f(movie): the player copies the frame it just decoded into the screen
+   surface at (+8, +0xc) (+0x48 = 1: every row twice).  Remember where, and
+   keep that very frame in full colour - no guessing from the screen. */
+static u32 *snap;
+static int snap_w, snap_h, snap_y, snap_ok;
+static u32 snap_ms;
+void N_movie_copy(void)
+{
+    u32 p = ARG(0);
+    rt_wrap_orig("N_movie_copy", NULL)();
+    int mw, mh;
+    const u32 *mf = vfw_last_frame(&mw, &mh);
+    snap_ok = 0;
+    if (!mf || RD32(p + 100) != 0 || RD32(p + 0x48) == 1 || RD32(p + 8) != 0 || mw != 640) return;
+    s32 y = (s32)RD32(p + 0xc);
+    if (y < 0 || y + mh > 480) return;
+    snap = realloc(snap, (size_t)mw * mh * 4);
+    memcpy(snap, mf, (size_t)mw * mh * 4);
+    snap_w = mw; snap_h = mh; snap_y = y; snap_ok = 1;
+    snap_ms = now_ms();
+}
+
 static int present_movie(void)
 {
     if (!opt_moviecolor || primary->bpp != 16 || now_ms() - vfw_last_ms > 300) { movie_y = -1; return 0; }
     int mw, mh;
     const u32 *mf = vfw_last_frame(&mw, &mh);
+    if (snap_ok && now_ms() - snap_ms < 300) { mf = snap; mw = snap_w; mh = snap_h; movie_y = snap_y; }
     if (!mf || mw != primary->w || mh > primary->h) return 0;
     const u8 *base = MEM + primary->mem;
     int pitch = primary->pitch, centre = (primary->h - mh) / 2;
-    /* the place found before, the centre (where the game puts its movies), then a search
-       that only trusts rows with detail */
-    if (!(movie_y >= 0 && movie_match_at(base, pitch, movie_y, mf, mw, mh)) &&
+    /* without the copy hook: the place found before, the centre (where the game puts
+       its movies), then a search that only trusts rows with detail */
+    if (!(snap_ok && mf == snap) && !(movie_y >= 0 && movie_match_at(base, pitch, movie_y, mf, mw, mh)) &&
         !(movie_y < 0 && movie_match_at(base, pitch, centre, mf, mw, mh) && (movie_y = centre, 1))) {
         movie_y = -1;
         for (int y = 0; y + mh <= primary->h; y++)
@@ -111,7 +134,14 @@ static int present_movie(void)
         for (int y = 0; y < h; y++) {
             if (y >= movie_y && y < movie_y + mh) continue;
             const u16 *s = (const u16 *)(base + y * pitch);
-            for (int x = 0; x < w; x++) if (s[x] & 0xe79c) { if (y < top) top = y; if (y + 1 > bot) bot = y + 1; break; }
+            int lit = 0;
+            for (int x = 0; x < w; x++) if (s[x] & 0xe79c) lit++;
+            if (lit >= 12) {   /* real content (subtitle text), not a few stray pixels */
+                static int nlog;
+                if (getenv(ENV("MOVIEDEBUG")) && nlog++ < 10) rt_log("movie: row %d outside the picture has %d lit pixels\n", y, lit);
+                if (y < top) top = y;
+                if (y + 1 > bot) bot = y + 1;
+            }
         }
         for (int y = top; y < bot; y++) {
             u32 *d = movie_buf + (y - top) * w;
@@ -161,7 +191,16 @@ static void present_now(void)
     last_present = now_ms();
     if (!primary) return;
     hires_layer.valid = 0;
-    if (primary->bpp == 16 && primary->w == 640 && present_movie()) { thr_yield(); return; }
+    if (primary->bpp == 16 && primary->w == 640) {
+        int ok = present_movie();
+        static u32 dbg_t;
+        if (getenv(ENV("MOVIEDEBUG")) && now_ms() - dbg_t > 500 && now_ms() - vfw_last_ms < 1000) {
+            dbg_t = now_ms();
+            rt_log("movie: ok %d snap_ok %d snap_y %d snap age %u vfw age %u movie_y %d\n", ok, snap_ok, snap_y,
+                   now_ms() - snap_ms, now_ms() - vfw_last_ms, movie_y);
+        }
+        if (ok) { thr_yield(); return; }
+    }
     if (primary->bpp == 16) {
         void space_compose(u32 mem, int pitch);
         space_compose(primary->mem, primary->pitch);

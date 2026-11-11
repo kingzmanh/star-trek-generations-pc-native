@@ -26,6 +26,7 @@ void di_mouse_button(int b, int down);
 void di_mouse_wheel(int dz);
 void di_key(int dik, int down);
 u8 dik_state[256];
+u32 win_input_count;   /* key presses and clicks (game_tweaks.c) */
 static int last_gx = -1, last_gy = -1;
 
 /* DirectInput mouse: motion in guest pixels between host mouse messages */
@@ -138,6 +139,7 @@ static void script_poll(void)
         } else if (e->done == 1 && e->kind == 1 && t >= e->at + 300) {
             e->done = 3;
             keys[VK_LBUTTON] = 0x80;
+            win_input_count++;
             di_mouse_button(0, 1);
             wm_mouse(WM_LBUTTONDOWN, 1, e->a, e->b);
         } else if ((e->done == 1 && e->kind == 0 && t >= e->at + e->hold) || (e->done == 3 && t >= e->at + 300 + e->hold)) {
@@ -150,6 +152,8 @@ static void script_poll(void)
         void thr_dump(void);
         rt_log("test quit at %u ms\n", t);
         thr_dump();
+        void api_stats_dump(void);
+        api_stats_dump();
         reg_save();
         if (rt_logf) fflush(rt_logf);
         TerminateProcess(GetCurrentProcess(), 0);
@@ -325,7 +329,7 @@ static LRESULT CALLBACK host_proc(HWND h, UINT m, WPARAM wp, LPARAM lp)
         break;
     case WM_SYSCHAR: if (wp == VK_RETURN) return 0; break;
     case WM_COMMAND: if (present_menu_command(LOWORD(wp))) { InvalidateRect(h, NULL, FALSE); return 0; } break;
-    case WM_KEYDOWN: keys[wp & 0xff] = 0x80; dik_event(lp, 1); wm_key(WM_KEYDOWN, (u32)wp, (u32)lp); return 0;
+    case WM_KEYDOWN: win_input_count++; keys[wp & 0xff] = 0x80; dik_event(lp, 1); wm_key(WM_KEYDOWN, (u32)wp, (u32)lp); return 0;
     case WM_KEYUP: keys[wp & 0xff] = 0; dik_event(lp, 0); wm_key(WM_KEYUP, (u32)wp, (u32)lp); return 0;
     case WM_MOUSEWHEEL: di_mouse_wheel((short)HIWORD(wp)); return 0;
     case WM_CHAR: wm_key(WM_CHAR, (u32)wp, (u32)lp); return 0;
@@ -334,7 +338,7 @@ static LRESULT CALLBACK host_proc(HWND h, UINT m, WPARAM wp, LPARAM lp)
         map_mouse(lp, &glp);
         di_motion(glp);
         di_mouse_button(m <= WM_LBUTTONUP ? 0 : m <= WM_RBUTTONUP ? 1 : 2, m == WM_LBUTTONDOWN || m == WM_RBUTTONDOWN || m == WM_MBUTTONDOWN);
-        if (m == WM_LBUTTONDOWN || m == WM_RBUTTONDOWN) { SetCapture(h); keys[m == WM_LBUTTONDOWN ? VK_LBUTTON : VK_RBUTTON] = 0x80; }
+        if (m == WM_LBUTTONDOWN || m == WM_RBUTTONDOWN) { win_input_count++; SetCapture(h); keys[m == WM_LBUTTONDOWN ? VK_LBUTTON : VK_RBUTTON] = 0x80; }
         if (m == WM_LBUTTONUP || m == WM_RBUTTONUP) { ReleaseCapture(); keys[m == WM_LBUTTONUP ? VK_LBUTTON : VK_RBUTTON] = 0; }
         wm_mouse(m, (u32)wp, glp & 0xffff, glp >> 16);
         return 0;
