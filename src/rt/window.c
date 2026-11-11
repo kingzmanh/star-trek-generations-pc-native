@@ -383,9 +383,11 @@ void win_create(u32 wndproc, const char *title)
     }
 }
 
+void ddraw_flush(void);
 int win_pump(int wait)
 {
     MSG m;
+    ddraw_flush();
     if (wait && qh == qt && !quit_posted) MsgWaitForMultipleObjects(0, NULL, FALSE, 5, QS_ALLINPUT);
     while (PeekMessageA(&m, NULL, 0, 0, PM_REMOVE)) {
         TranslateMessage(&m);

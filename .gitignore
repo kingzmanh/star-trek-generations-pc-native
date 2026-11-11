@@ -13,3 +13,4 @@ p.txt
 src/gen/
 installer/*.exe
 graphify-out/
+testroot/

@@ -27,6 +27,7 @@ typedef struct {
 
 static Codec codec[4];
 u32 vfw_frame_counter;
+u32 vfw_last_ms;      /* when the latest frame was decoded */
 
 static inline u32 BE16(const u8 *p) { return (p[0] << 8) | p[1]; }
 static inline u32 BE24(const u8 *p) { return (p[0] << 16) | (p[1] << 8) | p[2]; }
@@ -252,6 +253,7 @@ void api_ICDecompress(void)
     if (!c->frames++) { log_bi("decompress in", in); log_bi("decompress out", out); }
     if (size) decode_frame(c, MEM + data, size);
     vfw_frame_counter++;
+    vfw_last_ms = now_ms();
     if (!(ARG(1) & 0x80000000u) && bits) output(c, out, bits);   /* not ICDECOMPRESS_HURRYUP */
     RETC(0);
 }

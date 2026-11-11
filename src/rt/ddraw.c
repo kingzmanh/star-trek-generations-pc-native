@@ -50,9 +50,76 @@ static u32 cur_pal[256];
 static Surf *S(u32 obj) { if (!obj) return NULL; u32 i = RD32(obj + 4); return (i < MAXS && surfs[i] && surfs[i]->obj == obj) ? surfs[i] : NULL; }
 static Pal *P(u32 obj) { if (!obj) return NULL; u32 i = RD32(obj + 4); return (i < 64 && pals[i] && pals[i]->obj == obj) ? pals[i] : NULL; }
 
+/* Movies in full colour: while a movie plays, find the decoder's latest
+   picture in the 16-bit screen (the game copies it there unchanged, so a row
+   of it matches exactly) and show the 24-bit original in its place. */
+extern int opt_moviecolor;
+extern u32 vfw_last_ms;
+const u32 *vfw_last_frame(int *w, int *h);
+static int movie_y = -1;
+static u32 *movie_buf;
+
+static int movie_row_match(const u16 *row, const u32 *src, int w)
+{
+    for (int x = 0; x < w; x += 7) {
+        u32 p = src[x];
+        if (row[x] != (u16)(((p >> 8) & 0xf800) | ((p >> 5) & 0x07e0) | ((p >> 3) & 0x1f))) return 0;
+    }
+    return 1;
+}
+
+static int present_movie(void)
+{
+    if (!opt_moviecolor || primary->bpp != 16 || now_ms() - vfw_last_ms > 300) { movie_y = -1; return 0; }
+    int mw, mh;
+    const u32 *mf = vfw_last_frame(&mw, &mh);
+    if (!mf || mw != primary->w || mh > primary->h) return 0;
+    const u8 *base = MEM + primary->mem;
+    int probe = mh / 2;   /* a middle row: top rows of a fading picture can be black */
+    if (movie_y < 0 || !movie_row_match((const u16 *)(base + (movie_y + probe) * primary->pitch), mf + probe * mw, mw)) {
+        movie_y = -1;
+        for (int y = 0; y + mh <= primary->h; y++)
+            if (movie_row_match((const u16 *)(base + (y + probe) * primary->pitch), mf + probe * mw, mw)) { movie_y = y; break; }
+        if (movie_y < 0) return 0;
+    }
+    if (!movie_buf) movie_buf = malloc(640 * 480 * 4);
+    int w = primary->w, h = primary->h;
+    for (int y = 0; y < h; y++) {
+        u32 *d = movie_buf + y * w;
+        if (y >= movie_y && y < movie_y + mh) { memcpy(d, mf + (y - movie_y) * mw, w * 4); continue; }
+        const u16 *s = (const u16 *)(base + y * primary->pitch);
+        for (int x = 0; x < w; x++) {
+            u32 c = s[x], r = (c >> 11) & 31, g = (c >> 5) & 63, b = c & 31;
+            d[x] = (r << 3 | r >> 2) << 16 | (g << 2 | g >> 4) << 8 | (b << 3 | b >> 2);
+        }
+    }
+    present_frame32(movie_buf, w, h);
+    return 1;
+}
+
+/* drawing into the primary (Blt / BltFast / Unlock) can happen hundreds of
+   times a frame: those present at most every 5 ms, the rest is flushed from
+   the message pump (ddraw_flush); Flip always presents */
+static int present_pending;
+static u32 last_present;
+static void present_now(void);
 static void present(void)
 {
+    u32 t = now_ms();
+    if (t - last_present < 5) { present_pending = 1; return; }
+    present_now();
+}
+void ddraw_flush(void)
+{
+    if (present_pending && now_ms() - last_present >= 5) present_now();
+}
+
+static void present_now(void)
+{
+    present_pending = 0;
+    last_present = now_ms();
     if (!primary) return;
+    if (primary->bpp == 16 && primary->w == 640 && present_movie()) { thr_yield(); return; }
     if (primary->bpp == 16) present_frame16(MEM + primary->mem, primary->pitch, primary->w, primary->h);
     else {
         if (primary->pal) memcpy(cur_pal, primary->pal->rgb, sizeof cur_pal);
@@ -377,7 +444,7 @@ static void s_Flip(void)
         s->mem = s->back->mem;
         s->back->mem = m;
         if (!(ARG(2) & 0x8)) vsync_wait();   /* not DDFLIP_NOVSYNC */
-        present();
+        present_now();
     }
     RET(DD_OK, 3);
 }

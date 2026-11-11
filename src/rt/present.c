@@ -20,6 +20,7 @@ int opt_fullscreen = 1, opt_filter = 2, opt_sharpen = 1, opt_fxaa = 0, opt_aspec
    640x480 first (the filter works at a whole multiple), then fit that
    picture to the window.  The game's art is 640x480: no extra detail. */
 int opt_scale = 0;
+int opt_moviecolor = 1;   /* movies from the decoder in 24-bit colour instead of the game's 16-bit copy */
 static char ini_path[700];
 static HWND hwnd;
 static IDirect3D9 *d3d;
@@ -442,6 +443,7 @@ void settings_load(void)
     opt_aspect = ini_int("video", "Aspect", 0, 0, 2);
     opt_showfps = ini_int("video", "ShowFPS", 0, 0, 1);
     opt_scale = ini_int("video", "Resolution", 0, 0, 4);
+    opt_moviecolor = ini_int("video", "MovieColor", 1, 0, 1);
     if (getenv(ENV("SCALE"))) opt_scale = atoi(getenv(ENV("SCALE"))) & 7;
     if (opt_scale > 4) opt_scale = 4;
     if (getenv(ENV("HIDDEN"))) opt_fullscreen = 0;
@@ -457,11 +459,12 @@ static void settings_save(void)
     put("Aspect", opt_aspect);
     put("ShowFPS", opt_showfps);
     put("Resolution", opt_scale);
+    put("MovieColor", opt_moviecolor);
 }
 
 /* ---------------- menu bar ---------------- */
 enum { ID_FILTER = 1000, ID_SHARP = 1010, ID_FXAA = 1020, ID_ASPECT = 1030, ID_WIN = 1040, ID_FULLSCREEN = 1050,
-       ID_SHOWFPS = 1051, ID_CONTROLS = 1060, ID_ABOUT = 1061, ID_SCALE = 1070 };
+       ID_SHOWFPS = 1051, ID_CONTROLS = 1060, ID_ABOUT = 1061, ID_SCALE = 1070, ID_MOVIECOLOR = 1080 };
 static HMENU g_menu;
 static WINDOWPLACEMENT wpl = { sizeof wpl };
 
@@ -472,6 +475,7 @@ static void update_checks(void)
     CheckMenuRadioItem(g_menu, ID_ASPECT, ID_ASPECT + 2, ID_ASPECT + opt_aspect, MF_BYCOMMAND);
     CheckMenuRadioItem(g_menu, ID_SCALE, ID_SCALE + 4, ID_SCALE + opt_scale, MF_BYCOMMAND);
     CheckMenuItem(g_menu, ID_FXAA, MF_BYCOMMAND | (opt_fxaa ? MF_CHECKED : MF_UNCHECKED));
+    CheckMenuItem(g_menu, ID_MOVIECOLOR, MF_BYCOMMAND | (opt_moviecolor ? MF_CHECKED : MF_UNCHECKED));
     CheckMenuItem(g_menu, ID_FULLSCREEN, MF_BYCOMMAND | (opt_fullscreen ? MF_CHECKED : MF_UNCHECKED));
     CheckMenuItem(g_menu, ID_SHOWFPS, MF_BYCOMMAND | (opt_showfps ? MF_CHECKED : MF_UNCHECKED));
 }
@@ -480,7 +484,7 @@ static HMENU build_menu(void)
 {
     HMENU bar = CreateMenu(), video = CreatePopupMenu(), asp = CreatePopupMenu(), filt = CreatePopupMenu(),
           sharp = CreatePopupMenu(), view = CreatePopupMenu(), winm = CreatePopupMenu(), help = CreatePopupMenu();
-    AppendMenuW(filt, MF_STRING, ID_FILTER + 2, L"Bicubic  (smooth and sharp - best for the clay pictures)");
+    AppendMenuW(filt, MF_STRING, ID_FILTER + 2, L"Bicubic  (smooth and sharp - default)");
     AppendMenuW(filt, MF_SEPARATOR, 0, NULL);
     AppendMenuW(filt, MF_STRING, ID_FILTER + 0, L"Nearest  (sharp pixels)");
     AppendMenuW(filt, MF_STRING, ID_FILTER + 1, L"Bilinear  (smooth)");
@@ -509,6 +513,8 @@ static HMENU build_menu(void)
     AppendMenuW(video, MF_POPUP, (UINT_PTR)filt, L"Upscale &Filter");
     AppendMenuW(video, MF_STRING, ID_FXAA, L"Anti-aliasing (&FXAA)");
     AppendMenuW(video, MF_POPUP, (UINT_PTR)sharp, L"&Sharpening (contrast adaptive)");
+    AppendMenuW(video, MF_SEPARATOR, 0, NULL);
+    AppendMenuW(video, MF_STRING, ID_MOVIECOLOR, L"&Movies in full colour  (24-bit, off = the game's 16-bit)");
     for (int k = 1; k <= 3; k++) { wchar_t t[32]; swprintf(t, 32, L"%d x %d", 640 * k, 480 * k); AppendMenuW(winm, MF_STRING, ID_WIN + k, t); }
     AppendMenuW(view, MF_POPUP, (UINT_PTR)winm, L"&Window Size");
     AppendMenuW(view, MF_STRING, ID_FULLSCREEN, L"&Fullscreen\tAlt+Enter");
@@ -572,6 +578,7 @@ int present_menu_command(int id)
     else if (id >= ID_SHARP && id <= ID_SHARP + 3) opt_sharpen = id - ID_SHARP;
     else if (id >= ID_ASPECT && id <= ID_ASPECT + 2) opt_aspect = id - ID_ASPECT;
     else if (id == ID_FXAA) opt_fxaa = !opt_fxaa;
+    else if (id == ID_MOVIECOLOR) opt_moviecolor = !opt_moviecolor;
     else if (id >= ID_SCALE && id <= ID_SCALE + 4) opt_scale = id - ID_SCALE;
     else if (id == ID_SHOWFPS) { opt_showfps = !opt_showfps; if (!opt_showfps) SetWindowTextA(hwnd, GAME_TITLE); }
     else if (id > ID_WIN && id <= ID_WIN + 3) { set_client_size(640 * (id - ID_WIN), 480 * (id - ID_WIN)); return 1; }
