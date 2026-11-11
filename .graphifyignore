@@ -1,0 +1,8 @@
+game/
+gamedata/
+re/
+shots/
+build/
+src/gen/
+installer/
+*.exe

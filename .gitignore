@@ -1,0 +1,14 @@
+# game data and everything derived from it stays out of the repo
+game/
+gamedata/
+re/
+shots/
+build/
+*.exe
+*.log
+*_registry.txt
+generations.ini
+syms.txt
+p.txt
+src/gen/
+installer/*.exe
