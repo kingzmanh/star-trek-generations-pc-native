@@ -16,3 +16,4 @@
 4db4f9 N_snd_error wrap
 4d1620 N_res_error wrap
 4271ce N_slider_draw wrap
+494d18 N_sp_frame wrap

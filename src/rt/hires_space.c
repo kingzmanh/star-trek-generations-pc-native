@@ -214,6 +214,20 @@ void N_sp_convert(void)
     rt_wrap_orig("N_sp_convert", NULL)();
 }
 
+/* 494d18: the viewscreen frame.  When the battle ends it returns between the
+   3D begin and the conversion, so the library would keep pointing at the
+   N x scratch buffer - and the game then frees "its" buffer (SmartHeap
+   MEM_BAD_POINTER, then a crash).  Put everything back whenever it returns. */
+void N_sp_frame(void)
+{
+    rt_wrap_orig("N_sp_frame", NULL)();
+    if (active) {
+        u32 eax = cpu.r[R_EAX];
+        finish();
+        cpu.r[R_EAX] = eax;
+    }
+}
+
 /* ddraw.c, presenting a 16-bit frame: the N x layer over the viewscreen */
 static u32 *layer;
 void space_compose(u32 mem, int pitch)
