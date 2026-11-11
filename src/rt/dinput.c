@@ -51,7 +51,26 @@ static void push(Dev *d, u32 ofs, u32 data)
 
 static Dev *find(int kind) { for (int i = 0; i < 4; i++) if (devs[i].obj && devs[i].kind == kind) return &devs[i]; return NULL; }
 
-/* from window.c: motion in guest pixels, buttons 0..2, wheel */
+/* from window.c: the host pointer at guest pixel (x, y).  The game moves its
+   own cursor by the deltas; aim them at the pointer (from the game's cursor
+   position once it has taken all queued motion) so the two never drift. */
+static int vx = -1, vy = -1;
+void di_mouse_to(int x, int y)
+{
+    Dev *d = find(1);
+    if (!d || !d->acquired) { vx = vy = -1; return; }
+#ifdef GAME_MOUSE_XY
+    if (d->qh == d->qt || vx < 0) { vx = (s32)RD32(GAME_MOUSE_XY); vy = (s32)RD32(GAME_MOUSE_XY + 4); }
+#else
+    if (vx < 0) { vx = x; vy = y; }
+#endif
+    int dx = x - vx, dy = y - vy;
+    vx = x; vy = y;
+    d->dx += dx; d->dy += dy;
+    if (dx) push(d, 0, (u32)dx);
+    if (dy) push(d, 4, (u32)dy);
+}
+
 void di_mouse_move(int dx, int dy)
 {
     Dev *d = find(1);

@@ -782,6 +782,9 @@ void wm_mouse(u32 msg, u32 keys, int x, int y)
     int sx, sy;
     screen_pos(W(t), &sx, &sy);
     u32 lp = (u32)((x - sx) & 0xffff) | ((u32)(y - sy) << 16);
+    if (msg != WM_MOUSEMOVE && getenv(ENV("WMDEBUG")))
+        rt_log("wm: mouse %x at %d,%d -> window %08x (%s) client %d,%d\n", msg, x, y, t,
+               W(t)->cls >= 0 ? cls[W(t)->cls].name : "?", x - sx, y - sy);
     msgq_post(t, msg, keys, lp);
 }
 
@@ -839,6 +842,8 @@ void api_DispatchMessageA(void)
     if (msg == WM_QUIT) RET(0, 1);
     if (!h) RET(0, 1);
     r = wm_send(h, msg, RD32(m + 8), RD32(m + 12));
+    if (msg >= WM_LBUTTONDOWN && msg <= WM_MBUTTONDBLCLK && getenv(ENV("WMDEBUG")))
+        rt_log("wm: dispatched %x to %08x -> %x\n", msg, h, r);
     if (msg == WM_PAINT) { GWnd *w = W(h); if (w) w->dirty = 0; }
     RET(r, 1);
 }

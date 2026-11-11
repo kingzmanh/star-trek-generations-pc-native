@@ -353,24 +353,7 @@ void api_GetDeviceCaps(void)
     RET(i == BITSPIXEL ? 16 : i == PLANES ? 1 : i == HORZRES ? 640 : i == VERTRES ? 480 : i == LOGPIXELSX || i == LOGPIXELSY ? 96 :
         i == NUMCOLORS ? 0xffffffffu : i == TECHNOLOGY ? DT_RASDISPLAY : i == HORZSIZE ? 320 : i == VERTSIZE ? 240 : 0, 2);
 }
-void api_GetStockObject(void) { RET(0x000a0000u | ARG(0), 1); }
-void api_CreateSolidBrush(void) { RET(0x000b0000u | (ARG(0) & 0xffff), 1); }
-void api_CreateFontIndirectA(void) { RET(0x000c0001u, 1); }
 /* GetTextMetricsA(dc, tm): an 8x16 system font */
-void api_GetTextMetricsA(void)
-{
-    u32 t = ARG(1);
-    memset(MEM + t, 0, 56);
-    WR32(t, 16); WR32(t + 4, 13); WR32(t + 8, 3); WR32(t + 20, 8); WR32(t + 24, 8); WR32(t + 28, 400);
-    WR32(t + 36, 96); WR32(t + 40, 96);
-    WR8(t + 44, 32); WR8(t + 45, 255); WR8(t + 46, 32); WR8(t + 47, 32);
-    WR8(t + 52, FIXED_PITCH | FF_MODERN);
-    RET(1, 2);
-}
-void api_GetTextExtentPointA(void) { WR32(ARG(3), 8 * ARG(2)); WR32(ARG(3) + 4, 16); RET(1, 4); }
-void api_GetTextExtentPoint32A(void) { WR32(ARG(3), 8 * ARG(2)); WR32(ARG(3) + 4, 16); RET(1, 4); }
-void api_GetObjectType(void) { RET(ARG(0) >> 16 == 0x0a ? 1 : 0, 1); }
-void api_GetObjectA(void) { if (ARG(2)) memset(MEM + ARG(2), 0, ARG(1)); RET(ARG(1), 3); }
 void api_GetClipBox(void) { u32 r = ARG(1); WR32(r, 0); WR32(r + 4, 0); WR32(r + 8, 640); WR32(r + 12, 480); RET(2, 2); }
 void api_GetCurrentPositionEx(void) { if (ARG(1)) { WR32(ARG(1), 0); WR32(ARG(1) + 4, 0); } RET(1, 2); }
 void api_GetViewportExtEx(void) { if (ARG(1)) { WR32(ARG(1), 1); WR32(ARG(1) + 4, 1); } RET(1, 2); }

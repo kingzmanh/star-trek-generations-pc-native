@@ -14,29 +14,36 @@ void api_ChildWindowFromPoint(void);
 void api_ClientToScreen(void);
 void api_CopyFileA(void);
 void api_CopyRect(void);
+void api_CreateCompatibleDC(void);
 void api_CreateDirectoryA(void);
 void api_CreateFileMappingA(void);
 void api_CreateFontIndirectA(void);
 void api_CreatePalette(void);
+void api_CreatePen(void);
 void api_CreateSolidBrush(void);
 void api_CreateWindowExA(void);
 void api_DebugActiveProcess(void);
 void api_DebugBreak(void);
 void api_DefWindowProcA(void);
 void api_DeferWindowPos(void);
+void api_DeleteDC(void);
 void api_DeleteFileA(void);
+void api_DeleteObject(void);
 void api_DestroyWindow(void);
 void api_DirectDrawCreate(void);
 void api_DirectInputCreateA(void);
 void api_DirectSoundCreate(void);
 void api_DispatchMessageA(void);
+void api_DrawTextA(void);
 void api_DuplicateHandle(void);
 void api_EnableWindow(void);
 void api_EndDeferWindowPos(void);
 void api_EndPaint(void);
 void api_EnumWindows(void);
 void api_EqualRect(void);
+void api_ExtTextOutA(void);
 void api_FatalAppExitA(void);
+void api_FillRect(void);
 void api_FindResourceA(void);
 void api_FindWindowA(void);
 void api_FormatMessageA(void);
@@ -78,6 +85,7 @@ void api_GetObjectA(void);
 void api_GetObjectType(void);
 void api_GetPaletteEntries(void);
 void api_GetParent(void);
+void api_GetPixel(void);
 void api_GetPrivateProfileIntA(void);
 void api_GetPrivateProfileStringA(void);
 void api_GetProcessAffinityMask(void);
@@ -138,6 +146,7 @@ void api_IsWindow(void);
 void api_IsWindowEnabled(void);
 void api_IsWindowVisible(void);
 void api_IsZoomed(void);
+void api_LineTo(void);
 void api_LoadBitmapA(void);
 void api_LoadCursorA(void);
 void api_LoadIconA(void);
@@ -153,12 +162,14 @@ void api_MapViewOfFileEx(void);
 void api_MapWindowPoints(void);
 void api_MessageBeep(void);
 void api_MoveFileA(void);
+void api_MoveToEx(void);
 void api_MoveWindow(void);
 void api_MulDiv(void);
 void api_OemToCharA(void);
 void api_OffsetRect(void);
 void api_OpenFileMappingA(void);
 void api_OpenProcess(void);
+void api_PatBlt(void);
 void api_PeekMessageA(void);
 void api_PostMessageA(void);
 void api_PostQuitMessage(void);
@@ -166,6 +177,7 @@ void api_PtInRect(void);
 void api_QueryPerformanceCounter(void);
 void api_QueryPerformanceFrequency(void);
 void api_RaiseException(void);
+void api_Rectangle(void);
 void api_RegCloseKey(void);
 void api_RegCreateKeyExA(void);
 void api_RegDeleteKeyA(void);
@@ -182,10 +194,15 @@ void api_ReleaseCapture(void);
 void api_ReleaseDC(void);
 void api_RemoveDirectoryA(void);
 void api_RemovePropA(void);
+void api_RestoreDC(void);
+void api_SaveDC(void);
 void api_ScreenToClient(void);
+void api_SelectObject(void);
 void api_SendDlgItemMessageA(void);
 void api_SendMessageA(void);
 void api_SetActiveWindow(void);
+void api_SetBkColor(void);
+void api_SetBkMode(void);
 void api_SetCapture(void);
 void api_SetCursor(void);
 void api_SetCursorPos(void);
@@ -197,8 +214,13 @@ void api_SetForegroundWindow(void);
 void api_SetLastError(void);
 void api_SetPaletteEntries(void);
 void api_SetParent(void);
+void api_SetPixel(void);
 void api_SetPropA(void);
+void api_SetROP2(void);
 void api_SetRect(void);
+void api_SetTextAlign(void);
+void api_SetTextCharacterExtra(void);
+void api_SetTextColor(void);
 void api_SetThreadAffinityMask(void);
 void api_SetWindowLongA(void);
 void api_SetWindowPlacement(void);
@@ -209,6 +231,7 @@ void api_ShowCursor(void);
 void api_ShowWindow(void);
 void api_SizeofResource(void);
 void api_SystemParametersInfoA(void);
+void api_TextOutA(void);
 void api_ToAscii(void);
 void api_TranslateMessage(void);
 void api_UnhookWindowsHookEx(void);
@@ -253,29 +276,36 @@ const ApiEnt api_tab_rt[] = {
     {"ClientToScreen", api_ClientToScreen},
     {"CopyFileA", api_CopyFileA},
     {"CopyRect", api_CopyRect},
+    {"CreateCompatibleDC", api_CreateCompatibleDC},
     {"CreateDirectoryA", api_CreateDirectoryA},
     {"CreateFileMappingA", api_CreateFileMappingA},
     {"CreateFontIndirectA", api_CreateFontIndirectA},
     {"CreatePalette", api_CreatePalette},
+    {"CreatePen", api_CreatePen},
     {"CreateSolidBrush", api_CreateSolidBrush},
     {"CreateWindowExA", api_CreateWindowExA},
     {"DebugActiveProcess", api_DebugActiveProcess},
     {"DebugBreak", api_DebugBreak},
     {"DefWindowProcA", api_DefWindowProcA},
     {"DeferWindowPos", api_DeferWindowPos},
+    {"DeleteDC", api_DeleteDC},
     {"DeleteFileA", api_DeleteFileA},
+    {"DeleteObject", api_DeleteObject},
     {"DestroyWindow", api_DestroyWindow},
     {"DirectDrawCreate", api_DirectDrawCreate},
     {"DirectInputCreateA", api_DirectInputCreateA},
     {"DirectSoundCreate", api_DirectSoundCreate},
     {"DispatchMessageA", api_DispatchMessageA},
+    {"DrawTextA", api_DrawTextA},
     {"DuplicateHandle", api_DuplicateHandle},
     {"EnableWindow", api_EnableWindow},
     {"EndDeferWindowPos", api_EndDeferWindowPos},
     {"EndPaint", api_EndPaint},
     {"EnumWindows", api_EnumWindows},
     {"EqualRect", api_EqualRect},
+    {"ExtTextOutA", api_ExtTextOutA},
     {"FatalAppExitA", api_FatalAppExitA},
+    {"FillRect", api_FillRect},
     {"FindResourceA", api_FindResourceA},
     {"FindWindowA", api_FindWindowA},
     {"FormatMessageA", api_FormatMessageA},
@@ -317,6 +347,7 @@ const ApiEnt api_tab_rt[] = {
     {"GetObjectType", api_GetObjectType},
     {"GetPaletteEntries", api_GetPaletteEntries},
     {"GetParent", api_GetParent},
+    {"GetPixel", api_GetPixel},
     {"GetPrivateProfileIntA", api_GetPrivateProfileIntA},
     {"GetPrivateProfileStringA", api_GetPrivateProfileStringA},
     {"GetProcessAffinityMask", api_GetProcessAffinityMask},
@@ -377,6 +408,7 @@ const ApiEnt api_tab_rt[] = {
     {"IsWindowEnabled", api_IsWindowEnabled},
     {"IsWindowVisible", api_IsWindowVisible},
     {"IsZoomed", api_IsZoomed},
+    {"LineTo", api_LineTo},
     {"LoadBitmapA", api_LoadBitmapA},
     {"LoadCursorA", api_LoadCursorA},
     {"LoadIconA", api_LoadIconA},
@@ -392,12 +424,14 @@ const ApiEnt api_tab_rt[] = {
     {"MapWindowPoints", api_MapWindowPoints},
     {"MessageBeep", api_MessageBeep},
     {"MoveFileA", api_MoveFileA},
+    {"MoveToEx", api_MoveToEx},
     {"MoveWindow", api_MoveWindow},
     {"MulDiv", api_MulDiv},
     {"OemToCharA", api_OemToCharA},
     {"OffsetRect", api_OffsetRect},
     {"OpenFileMappingA", api_OpenFileMappingA},
     {"OpenProcess", api_OpenProcess},
+    {"PatBlt", api_PatBlt},
     {"PeekMessageA", api_PeekMessageA},
     {"PostMessageA", api_PostMessageA},
     {"PostQuitMessage", api_PostQuitMessage},
@@ -405,6 +439,7 @@ const ApiEnt api_tab_rt[] = {
     {"QueryPerformanceCounter", api_QueryPerformanceCounter},
     {"QueryPerformanceFrequency", api_QueryPerformanceFrequency},
     {"RaiseException", api_RaiseException},
+    {"Rectangle", api_Rectangle},
     {"RegCloseKey", api_RegCloseKey},
     {"RegCreateKeyExA", api_RegCreateKeyExA},
     {"RegDeleteKeyA", api_RegDeleteKeyA},
@@ -421,10 +456,15 @@ const ApiEnt api_tab_rt[] = {
     {"ReleaseDC", api_ReleaseDC},
     {"RemoveDirectoryA", api_RemoveDirectoryA},
     {"RemovePropA", api_RemovePropA},
+    {"RestoreDC", api_RestoreDC},
+    {"SaveDC", api_SaveDC},
     {"ScreenToClient", api_ScreenToClient},
+    {"SelectObject", api_SelectObject},
     {"SendDlgItemMessageA", api_SendDlgItemMessageA},
     {"SendMessageA", api_SendMessageA},
     {"SetActiveWindow", api_SetActiveWindow},
+    {"SetBkColor", api_SetBkColor},
+    {"SetBkMode", api_SetBkMode},
     {"SetCapture", api_SetCapture},
     {"SetCursor", api_SetCursor},
     {"SetCursorPos", api_SetCursorPos},
@@ -436,8 +476,13 @@ const ApiEnt api_tab_rt[] = {
     {"SetLastError", api_SetLastError},
     {"SetPaletteEntries", api_SetPaletteEntries},
     {"SetParent", api_SetParent},
+    {"SetPixel", api_SetPixel},
     {"SetPropA", api_SetPropA},
+    {"SetROP2", api_SetROP2},
     {"SetRect", api_SetRect},
+    {"SetTextAlign", api_SetTextAlign},
+    {"SetTextCharacterExtra", api_SetTextCharacterExtra},
+    {"SetTextColor", api_SetTextColor},
     {"SetThreadAffinityMask", api_SetThreadAffinityMask},
     {"SetWindowLongA", api_SetWindowLongA},
     {"SetWindowPlacement", api_SetWindowPlacement},
@@ -448,6 +493,7 @@ const ApiEnt api_tab_rt[] = {
     {"ShowWindow", api_ShowWindow},
     {"SizeofResource", api_SizeofResource},
     {"SystemParametersInfoA", api_SystemParametersInfoA},
+    {"TextOutA", api_TextOutA},
     {"ToAscii", api_ToAscii},
     {"TranslateMessage", api_TranslateMessage},
     {"UnhookWindowsHookEx", api_UnhookWindowsHookEx},

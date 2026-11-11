@@ -12,3 +12,4 @@ syms.txt
 p.txt
 src/gen/
 installer/*.exe
+graphify-out/

@@ -474,8 +474,24 @@ static void s_IsLost(void) { RET(DD_OK, 1); }
 static void s_Restore(void) { RET(DD_OK, 1); }
 static void s_GetBltStatus(void) { RET(DD_OK, 2); }
 static void s_GetFlipStatus(void) { RET(DD_OK, 2); }
-static void s_GetDC(void) { rt_log("ddraw: Surface::GetDC (unsupported)\n"); RET(DDERR_UNSUPPORTED, 2); }
-static void s_ReleaseDC(void) { RET(DD_OK, 2); }
+u32 gdi_surface_dc(u32 mem, int w, int h, int pitch, int bpp, const u32 *pal);
+void gdi_surface_release(u32 g);
+/* GetDC(this, &hdc): a host DIB DC with the surface's pixels; ReleaseDC writes them back */
+static void s_GetDC(void)
+{
+    Surf *s = S(ARG(0));
+    if (!s) RET(DDERR_INVALIDPARAMS, 2);
+    const u32 *pal = s->pal ? s->pal->rgb : (primary && primary->pal ? primary->pal->rgb : cur_pal);
+    s->dc = gdi_surface_dc(s->mem, s->w, s->h, s->pitch, s->bpp, pal);
+    WR32(ARG(1), s->dc);
+    RET(s->dc ? DD_OK : DDERR_GENERIC, 2);
+}
+static void s_ReleaseDC(void)
+{
+    Surf *s = S(ARG(0));
+    if (s && s->dc) { gdi_surface_release(s->dc); s->dc = 0; if (s == primary) present(); }
+    RET(DD_OK, 2);
+}
 static void s_SetClipper(void) { RET(DD_OK, 2); }
 static void s_GetClipper(void) { RET(DDERR_NOTFOUND, 2); }
 static void s_PageLock(void) { RET(DD_OK, 2); }

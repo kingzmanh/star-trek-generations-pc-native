@@ -29,10 +29,11 @@ u8 dik_state[256];
 static int last_gx = -1, last_gy = -1;
 
 /* DirectInput mouse: motion in guest pixels between host mouse messages */
+void di_mouse_to(int x, int y);
 static void di_motion(u32 glp)
 {
     int gx = glp & 0xffff, gy = glp >> 16;
-    if (last_gx >= 0) di_mouse_move(gx - last_gx, gy - last_gy);
+    di_mouse_to(gx, gy);
     last_gx = gx; last_gy = gy;
 }
 
@@ -95,7 +96,7 @@ static void script_init(void)
         int used = 0;
         if (sscanf(c, "%u,%u,%u%n", &x, &y, &ms, &used) < 3) break;
         c += used;
-        evs[nev++] = (Ev){ ms, 1, x, y, 80, 0 };
+        evs[nev++] = (Ev){ ms, 1, x, y, 150, 0 };
         if (*c == ';') c++;
     }
     const char *s = getenv(ENV("SHOT"));
@@ -130,16 +131,19 @@ static void script_poll(void)
         if (!e->done && t >= e->at) {
             e->done = 1;
             if (e->kind == 0) key_event(e->a, 1);
-            else {
+            else {   /* a click: move there, press 300 ms later, release after the hold */
                 di_motion(e->a | (e->b << 16));
                 wm_mouse(WM_MOUSEMOVE, 0, e->a, e->b);
-                di_mouse_button(0, 1);
-                wm_mouse(WM_LBUTTONDOWN, 1, e->a, e->b);
             }
-        } else if (e->done == 1 && t >= e->at + e->hold) {
+        } else if (e->done == 1 && e->kind == 1 && t >= e->at + 300) {
+            e->done = 3;
+            keys[VK_LBUTTON] = 0x80;
+            di_mouse_button(0, 1);
+            wm_mouse(WM_LBUTTONDOWN, 1, e->a, e->b);
+        } else if ((e->done == 1 && e->kind == 0 && t >= e->at + e->hold) || (e->done == 3 && t >= e->at + 300 + e->hold)) {
             e->done = 2;
             if (e->kind == 0) key_event(e->a, 0);
-            else { di_mouse_button(0, 0); wm_mouse(WM_LBUTTONUP, 0, e->a, e->b); }
+            else { keys[VK_LBUTTON] = 0; di_mouse_button(0, 0); wm_mouse(WM_LBUTTONUP, 0, e->a, e->b); }
         }
     }
     if (quit_at && t >= quit_at) {
@@ -512,9 +516,6 @@ void api_SetCursorPos(void)
     wm_mouse(WM_MOUSEMOVE, 0, gx, gy);
     RET(1, 2);
 }
-void api_GetDC(void) { RET(0x0003ffffu, 1); }
-void api_GetWindowDC(void) { RET(0x0003ffffu, 1); }
-void api_ReleaseDC(void) { RET(1, 2); }
 void api_GetWindowThreadProcessId(void) { if (ARG(1)) WR32(ARG(1), 0x40); RET(0x44, 2); }
 void api_GetSystemMetrics(void)
 {
