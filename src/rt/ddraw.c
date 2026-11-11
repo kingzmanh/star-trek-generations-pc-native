@@ -90,6 +90,7 @@ extern int opt_moviefull;
    keep that very frame in full colour - no guessing from the screen. */
 static u32 *snap;
 static int snap_w, snap_h, snap_y, snap_ok;
+static u32 snap_serial;
 static u32 snap_ms;
 void N_movie_copy(void)
 {
@@ -104,27 +105,40 @@ void N_movie_copy(void)
     snap = realloc(snap, (size_t)mw * mh * 4);
     memcpy(snap, mf, (size_t)mw * mh * 4);
     snap_w = mw; snap_h = mh; snap_y = y; snap_ok = 1;
+    { extern u32 vfw_movie_serial; snap_serial = vfw_movie_serial; }
     snap_ms = now_ms();
 }
 
 static int present_movie(void)
 {
-    if (!opt_moviecolor || primary->bpp != 16 || now_ms() - vfw_last_ms > 300) { movie_y = -1; return 0; }
-    int mw, mh;
-    const u32 *mf = vfw_last_frame(&mw, &mh);
-    if (snap_ok && now_ms() - snap_ms < 300) { mf = snap; mw = snap_w; mh = snap_h; movie_y = snap_y; }
-    if (!mf || mw != primary->w || mh > primary->h) return 0;
+    extern u32 vfw_movie_serial;
+    static int last_y = -1, last_h;
+    if (!opt_moviecolor || primary->bpp != 16 || now_ms() - vfw_last_ms > 1500) { movie_y = -1; last_y = -1; return 0; }
+    int mw = 0, mh = 0, from_screen = 0;
+    const u32 *mf = NULL;
+    if (snap_ok && snap_serial == vfw_movie_serial && now_ms() - snap_ms < 300) {
+        mf = snap; mw = snap_w; mh = snap_h; movie_y = snap_y;
+    } else if (now_ms() - vfw_last_ms <= 300 && !snap_ok) {
+        /* no copy hook data: find the decoder's picture on the screen */
+        mf = vfw_last_frame(&mw, &mh);
+        if (!mf || mw != primary->w || mh > primary->h) return 0;
+        const u8 *b0 = MEM + primary->mem;
+        int p0 = primary->pitch, centre = (primary->h - mh) / 2;
+        if (!(movie_y >= 0 && movie_match_at(b0, p0, movie_y, mf, mw, mh)) &&
+            !(movie_y < 0 && movie_match_at(b0, p0, centre, mf, mw, mh) && (movie_y = centre, 1))) {
+            movie_y = -1;
+            for (int y = 0; y + mh <= primary->h; y++)
+                if (movie_match_at(b0, p0, y, mf, mw, mh) == 2) { movie_y = y; break; }
+            if (movie_y < 0) return 0;
+        }
+    } else if (opt_moviefull && last_y >= 0) {
+        /* between frames / movies (a skip, the next one loading): keep the movie's
+           shape with what the screen shows there, so the picture does not jump */
+        from_screen = 1; mw = primary->w; mh = last_h; movie_y = last_y;
+    } else return 0;
+    last_y = movie_y; last_h = mh;
     const u8 *base = MEM + primary->mem;
-    int pitch = primary->pitch, centre = (primary->h - mh) / 2;
-    /* without the copy hook: the place found before, the centre (where the game puts
-       its movies), then a search that only trusts rows with detail */
-    if (!(snap_ok && mf == snap) && !(movie_y >= 0 && movie_match_at(base, pitch, movie_y, mf, mw, mh)) &&
-        !(movie_y < 0 && movie_match_at(base, pitch, centre, mf, mw, mh) && (movie_y = centre, 1))) {
-        movie_y = -1;
-        for (int y = 0; y + mh <= primary->h; y++)
-            if (movie_match_at(base, pitch, y, mf, mw, mh) == 2) { movie_y = y; break; }
-        if (movie_y < 0) return 0;
-    }
+    int pitch = primary->pitch;
     if (!movie_buf) movie_buf = malloc(640 * 480 * 4);
     int w = primary->w, h = primary->h;
     if (opt_moviefull) {
@@ -145,7 +159,7 @@ static int present_movie(void)
         }
         for (int y = top; y < bot; y++) {
             u32 *d = movie_buf + (y - top) * w;
-            if (y >= movie_y && y < movie_y + mh) { memcpy(d, mf + (y - movie_y) * mw, w * 4); continue; }
+            if (!from_screen && y >= movie_y && y < movie_y + mh) { memcpy(d, mf + (y - movie_y) * mw, w * 4); continue; }
             const u16 *s = (const u16 *)(base + y * pitch);
             for (int x = 0; x < w; x++) {
                 u32 c = s[x], r = (c >> 11) & 31, g = (c >> 5) & 63, b = c & 31;

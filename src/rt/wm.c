@@ -820,6 +820,8 @@ void wm_activate_app(int on)
 
 void wm_close(void)
 {
+    extern int rt_closing;
+    rt_closing = 1;
     if (g_hwnd) msgq_post(g_hwnd, WM_CLOSE, 0, 0);
     else msgq_quit(0);
 }

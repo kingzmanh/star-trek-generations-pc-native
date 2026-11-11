@@ -23,9 +23,13 @@ typedef struct {
     Strip strips[MAXSTRIP];
     int out_bpp, out_bitfields, out_565, out_topdown;
     u32 frames;
+    u32 stamp;               /* ICLocate order */
 } Codec;
 
 static Codec codec[4];
+static Codec *last_c;        /* the codec that decoded last: the movie playing now */
+static u32 stamp_next;
+u32 vfw_movie_serial;        /* changes when a movie starts decoding */
 u32 vfw_frame_counter;
 u32 vfw_last_ms;      /* when the latest frame was decoded */
 
@@ -175,7 +179,7 @@ static void output(Codec *c, u32 bi, u32 bits)
 /* the latest decoded movie picture (full colour) for the presenter */
 const u32 *vfw_last_frame(int *w, int *h)
 {
-    for (int i = 0; i < 4; i++) if (codec[i].used && codec[i].rgb) { *w = codec[i].w; *h = codec[i].h; return codec[i].rgb; }
+    if (last_c && last_c->used && last_c->rgb) { *w = last_c->w; *h = last_c->h; return last_c->rgb; }
     return NULL;
 }
 
@@ -198,18 +202,21 @@ void api_ICLocate(void)
     log_bi("ICLocate in", in);
     log_bi("ICLocate out", ARG(3));
     if (handler != cvid && handler != CVID && comp != cvid && comp != CVID) RET(0, 5);
-    for (int i = 0; i < 4; i++)
-        if (!codec[i].used) {
-            Codec *c = &codec[i];
-            memset(c, 0, sizeof *c);
-            c->used = 1;
-            c->w = in ? (s32)RD32(in + 4) : 640;
-            c->h = in ? (s32)RD32(in + 8) : 480;
-            if (c->h < 0) c->h = -c->h;
-            c->rgb = calloc((size_t)c->w * c->h, 4);
-            RET(0x6c00 + i, 5);
-        }
-    RET(0, 5);
+    /* a free slot, else the one used longest ago (the game does not always close them) */
+    int pick = -1;
+    for (int i = 0; i < 4 && pick < 0; i++) if (!codec[i].used) pick = i;
+    if (pick < 0) { pick = 0; for (int i = 1; i < 4; i++) if (codec[i].stamp < codec[pick].stamp) pick = i; }
+    Codec *c = &codec[pick];
+    if (c == last_c) last_c = NULL;
+    free(c->rgb);
+    memset(c, 0, sizeof *c);
+    c->stamp = ++stamp_next;
+    c->used = 1;
+    c->w = in ? (s32)RD32(in + 4) : 640;
+    c->h = in ? (s32)RD32(in + 8) : 480;
+    if (c->h < 0) c->h = -c->h;
+    c->rgb = calloc((size_t)c->w * c->h, 4);
+    RET(0x6c00 + pick, 5);
 }
 
 #define ICM_USER 0x4000
@@ -229,13 +236,16 @@ void api_ICSendMessage(void)
         log_bi("query out", p2);
         RET(0, 4);
     case ICM_USER + 12: /* ICM_DECOMPRESS_BEGIN */
+        vfw_movie_serial++;
         log_bi("begin in", p1);
         log_bi("begin out", p2);
         RET(0, 4);
     case ICM_USER + 14: /* ICM_DECOMPRESS_END */
         RET(0, 4);
     case 4:             /* DRV_CLOSE */
+        if (c == last_c) last_c = NULL;
         free(c->rgb);
+        c->rgb = NULL;
         c->used = 0;
         RET(1, 4);
     }
@@ -259,10 +269,11 @@ void api_ICDecompress(void)
     if (!c->frames++) { log_bi("decompress in", in); log_bi("decompress out", out); }
     if (size) decode_frame(c, MEM + data, size);
     vfw_frame_counter++;
+    last_c = c;
     vfw_last_ms = now_ms();
     if (!(ARG(1) & 0x80000000u) && bits) output(c, out, bits);   /* not ICDECOMPRESS_HURRYUP */
     RETC(0);
 }
 
-void api_ICClose(void) { Codec *c = C(ARG(0)); if (c) { free(c->rgb); c->rgb = NULL; c->used = 0; } RET(0, 1); }
+void api_ICClose(void) { Codec *c = C(ARG(0)); if (c) { if (c == last_c) last_c = NULL; free(c->rgb); c->rgb = NULL; c->used = 0; } RET(0, 1); }
 void api_ICOpen(void) { RET(0, 3); }

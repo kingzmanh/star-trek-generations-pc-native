@@ -21,6 +21,9 @@
 static int base_w, base_h, base_flip, set_n = 1;   /* the game's own DRE size, the N it was set to */
 static u32 lo_buf, lo_pitch;                       /* this frame's 1x buffer */
 static int frame_n;
+static u32 dre_last_ms;
+/* the away-mission 3D is running (window.c: WASD) */
+int dre_active(void) { return dre_last_ms && now_ms() - dre_last_ms < 500; }
 int dre_hires_debug;
 static u8 *lo_copy;                 /* the 1x picture as the game got it */
 static u32 frame_ms;
@@ -61,6 +64,7 @@ void N_dre_render(void)
     int n = set_n;
     lo_buf = ARG(0);
     lo_pitch = ARG(1);
+    dre_last_ms = now_ms();
     if (n < 2) { frame_n = 1; orig(); return; }
     int W = base_w * n, H = base_h * n;
     VirtualAlloc(MEM + HR_BUF, (size_t)W * H + 0x10000, MEM_COMMIT, PAGE_READWRITE);

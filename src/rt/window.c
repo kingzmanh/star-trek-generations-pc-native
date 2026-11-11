@@ -38,6 +38,26 @@ static void di_motion(u32 glp)
     last_gx = gx; last_gy = gy;
 }
 
+/* away missions: W A S D move like the arrow keys (forward, turn left, back,
+   turn right).  Only while the away-mission 3D runs - elsewhere letters stay
+   letters (save names).  A key keeps the meaning it had when pressed. */
+int dre_active(void);
+static u8 wasd_down[256];
+static int wasd_held;
+static void wasd_map(WPARAM *wp, LPARAM *lp, int down)
+{
+    static const struct { u8 vk, to, sc; } m[] = { {'W', VK_UP, 0x48}, {'A', VK_LEFT, 0x4b}, {'S', VK_DOWN, 0x50}, {'D', VK_RIGHT, 0x4d} };
+    for (int i = 0; i < 4; i++) {
+        if (*wp != m[i].vk) continue;
+        if (down && !wasd_down[m[i].vk] && dre_active()) { wasd_down[m[i].vk] = 1; wasd_held++; }
+        if (!wasd_down[m[i].vk]) return;
+        if (!down) { wasd_down[m[i].vk] = 0; if (wasd_held) wasd_held--; }
+        *wp = m[i].to;
+        *lp = (*lp & ~(LPARAM)0x01ff0000) | ((LPARAM)m[i].sc << 16) | (1 << 24);
+        return;
+    }
+}
+
 static void dik_event(LPARAM lp, int down)
 {
     int sc = (lp >> 16) & 0xff;
@@ -110,9 +130,14 @@ static void script_init(void)
 
 static void key_event(u32 vk, int down)
 {
+    WPARAM w = vk;
+    LPARAM l = down ? 1 : (LPARAM)0xc0000001u;
+    wasd_map(&w, &l, down);
+    int mapped = w != vk;
+    vk = (u32)w;
     keys[vk & 0xff] = down ? 0x80 : 0;
-    wm_key(down ? WM_KEYDOWN : WM_KEYUP, vk, down ? 1 : 0xc0000001u);
-    if (down) {
+    wm_key(down ? WM_KEYDOWN : WM_KEYUP, vk, (u32)l);
+    if (down && !mapped) {
         u32 ch = 0;
         if (vk >= 'A' && vk <= 'Z') ch = vk + 32;
         else if ((vk >= '0' && vk <= '9') || vk == ' ' || vk == 13 || vk == 8 || vk == 27) ch = vk;
@@ -329,10 +354,10 @@ static LRESULT CALLBACK host_proc(HWND h, UINT m, WPARAM wp, LPARAM lp)
         break;
     case WM_SYSCHAR: if (wp == VK_RETURN) return 0; break;
     case WM_COMMAND: if (present_menu_command(LOWORD(wp))) { InvalidateRect(h, NULL, FALSE); return 0; } break;
-    case WM_KEYDOWN: win_input_count++; keys[wp & 0xff] = 0x80; dik_event(lp, 1); wm_key(WM_KEYDOWN, (u32)wp, (u32)lp); return 0;
-    case WM_KEYUP: keys[wp & 0xff] = 0; dik_event(lp, 0); wm_key(WM_KEYUP, (u32)wp, (u32)lp); return 0;
+    case WM_KEYDOWN: win_input_count++; wasd_map(&wp, &lp, 1); keys[wp & 0xff] = 0x80; dik_event(lp, 1); wm_key(WM_KEYDOWN, (u32)wp, (u32)lp); return 0;
+    case WM_KEYUP: wasd_map(&wp, &lp, 0); keys[wp & 0xff] = 0; dik_event(lp, 0); wm_key(WM_KEYUP, (u32)wp, (u32)lp); return 0;
     case WM_MOUSEWHEEL: di_mouse_wheel((short)HIWORD(wp)); return 0;
-    case WM_CHAR: wm_key(WM_CHAR, (u32)wp, (u32)lp); return 0;
+    case WM_CHAR: if (wasd_held) return 0; wm_key(WM_CHAR, (u32)wp, (u32)lp); return 0;
     case WM_MOUSEMOVE: map_mouse(lp, &glp); di_motion(glp); wm_mouse(WM_MOUSEMOVE, (u32)wp, glp & 0xffff, glp >> 16); return 0;
     case WM_LBUTTONDOWN: case WM_LBUTTONUP: case WM_RBUTTONDOWN: case WM_RBUTTONUP: case WM_MBUTTONDOWN: case WM_MBUTTONUP:
         map_mouse(lp, &glp);
@@ -475,7 +500,7 @@ void api_PeekMessageA(void)
 }
 
 void api_TranslateMessage(void) { RET(0, 1); }   /* WM_CHAR comes from the host window */
-void api_PostQuitMessage(void) { rt_log("PostQuitMessage(%d)\n", ARG(0)); msgq_quit((int)ARG(0)); RET(0, 1); }
+void api_PostQuitMessage(void) { extern int rt_closing; rt_closing = 1; rt_log("PostQuitMessage(%d)\n", ARG(0)); msgq_quit((int)ARG(0)); RET(0, 1); }
 void api_GetMessageTime(void) { RET(now_ms(), 0); }
 void api_GetMessagePos(void) { int x, y; wm_get_cursor(&x, &y); RET((u32)(x & 0xffff) | ((u32)y << 16), 0); }
 

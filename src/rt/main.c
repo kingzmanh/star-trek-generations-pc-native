@@ -41,6 +41,7 @@ void rt_log(const char *fmt, ...)
     va_end(ap);
 }
 
+int rt_closing;
 void rt_fatal(const char *fmt, ...)
 {
     char buf[1024];
@@ -53,6 +54,14 @@ void rt_fatal(const char *fmt, ...)
            cpu.r[0], cpu.r[1], cpu.r[2], cpu.r[3], cpu.r[4], cpu.r[5], cpu.r[6], cpu.r[7]);
     for (int i = 0; i < 16; i++) rt_log(" [esp+%02x]=%08x", i * 4, RD32(cpu.r[4] + i * 4));
     rt_log("\n");
+    /* the player asked to quit (window closed / the game's Quit): the game's own
+       teardown can trip over objects its threads still use - just leave */
+    if (rt_closing) {
+        rt_log("(while closing: exiting quietly)\n");
+        reg_save();
+        if (rt_logf) fflush(rt_logf);
+        TerminateProcess(GetCurrentProcess(), 0);
+    }
     if (!getenv(ENV("HIDDEN"))) MessageBoxA(NULL, buf, GAME_TITLE, MB_ICONERROR);
     if (rt_logf) fflush(rt_logf);
     TerminateProcess(GetCurrentProcess(), 1);
