@@ -20,13 +20,17 @@ int opt_fullscreen = 1, opt_filter = 2, opt_sharpen = 1, opt_fxaa = 0, opt_aspec
    640x480 first (the filter works at a whole multiple), then fit that
    picture to the window.  The game's art is 640x480: no extra detail. */
 int opt_scale = 0;
-int opt_moviecolor = 1;   /* movies from the decoder in 24-bit colour instead of the game's 16-bit copy */
+int opt_moviecolor = 1;
+int opt_render = 4;       /* internal resolution of the live 3D (1 = original) */   /* movies from the decoder in 24-bit colour instead of the game's 16-bit copy */
 static char ini_path[700];
 static HWND hwnd;
 static IDirect3D9 *d3d;
 static IDirect3DDevice9 *dev;
 static D3DPRESENT_PARAMETERS pp;
 static IDirect3DTexture9 *src_tex, *aa_tex, *up_tex;
+HiresLayer hires_layer;
+static IDirect3DTexture9 *ov_tex;   /* the N x 3D layer */
+static int ov_w, ov_h;
 static IDirect3DSurface9 *aa_surf, *up_surf;
 static UINT up_w, up_h;
 static IDirect3DVertexShader9 *vs_blit;
@@ -215,6 +219,7 @@ static IDirect3DPixelShader9 *mk_ps(const char *src)
 static void release_targets(void)
 {
     if (src_tex) { IDirect3DTexture9_Release(src_tex); src_tex = NULL; }
+    if (ov_tex) { IDirect3DTexture9_Release(ov_tex); ov_tex = NULL; }
     if (aa_surf) { IDirect3DSurface9_Release(aa_surf); aa_surf = NULL; }
     if (aa_tex) { IDirect3DTexture9_Release(aa_tex); aa_tex = NULL; }
     if (up_surf) { IDirect3DSurface9_Release(up_surf); up_surf = NULL; }
@@ -412,6 +417,26 @@ int present_rgb(const u32 *pix, int sw, int sh)
         IDirect3DDevice9_StretchRect(dev, s, NULL, bb, &r, opt_filter ? D3DTEXF_LINEAR : D3DTEXF_POINT);
         IDirect3DSurface9_Release(s);
     }
+    /* the N x 3D layer (hires_dre.c): over its rectangle, alpha = where it shows */
+    if (hires_layer.valid && vs_blit && ps_copy && up_surf) {
+        if (ov_tex && (ov_w != hires_layer.w || ov_h != hires_layer.h)) { IDirect3DTexture9_Release(ov_tex); ov_tex = NULL; }
+        if (!ov_tex && SUCCEEDED(IDirect3DDevice9_CreateTexture(dev, hires_layer.w, hires_layer.h, 1, D3DUSAGE_DYNAMIC, D3DFMT_A8R8G8B8, D3DPOOL_DEFAULT, &ov_tex, NULL))) {
+            ov_w = hires_layer.w; ov_h = hires_layer.h;
+        }
+        D3DLOCKED_RECT ol;
+        if (ov_tex && SUCCEEDED(IDirect3DTexture9_LockRect(ov_tex, 0, &ol, NULL, D3DLOCK_DISCARD))) {
+            for (int y = 0; y < ov_h; y++) memcpy((u8 *)ol.pBits + y * ol.Pitch, hires_layer.pix + y * ov_w, ov_w * 4);
+            IDirect3DTexture9_UnlockRect(ov_tex, 0);
+            int vx0 = dx + hires_layer.x * dw / sw, vy0 = dy + hires_layer.y * dh / sh;
+            int vx1 = dx + (hires_layer.x + hires_layer.rw) * dw / sw, vy1 = dy + (hires_layer.y + hires_layer.rh) * dh / sh;
+            D3DVIEWPORT9 vo = {(DWORD)vx0, (DWORD)vy0, (DWORD)(vx1 - vx0), (DWORD)(vy1 - vy0), 0, 1};
+            IDirect3DDevice9_SetRenderState(dev, D3DRS_ALPHABLENDENABLE, TRUE);
+            IDirect3DDevice9_SetRenderState(dev, D3DRS_SRCBLEND, D3DBLEND_SRCALPHA);
+            IDirect3DDevice9_SetRenderState(dev, D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
+            blit(ov_tex, ov_w, ov_h, ps_copy, vo, 1);
+            IDirect3DDevice9_SetRenderState(dev, D3DRS_ALPHABLENDENABLE, FALSE);
+        }
+    }
     IDirect3DDevice9_EndScene(dev);
     IDirect3DSurface9_Release(bb);
     RECT sr = {0, 0, (LONG)cw, (LONG)ch};
@@ -444,6 +469,8 @@ void settings_load(void)
     opt_showfps = ini_int("video", "ShowFPS", 0, 0, 1);
     opt_scale = ini_int("video", "Resolution", 0, 0, 4);
     opt_moviecolor = ini_int("video", "MovieColor", 1, 0, 1);
+    opt_render = ini_int("video", "RenderScale", 4, 1, 4);
+    if (getenv(ENV("RENDER"))) opt_render = atoi(getenv(ENV("RENDER")));
     if (getenv(ENV("SCALE"))) opt_scale = atoi(getenv(ENV("SCALE"))) & 7;
     if (opt_scale > 4) opt_scale = 4;
     if (getenv(ENV("HIDDEN"))) opt_fullscreen = 0;
@@ -460,11 +487,12 @@ static void settings_save(void)
     put("ShowFPS", opt_showfps);
     put("Resolution", opt_scale);
     put("MovieColor", opt_moviecolor);
+    put("RenderScale", opt_render);
 }
 
 /* ---------------- menu bar ---------------- */
 enum { ID_FILTER = 1000, ID_SHARP = 1010, ID_FXAA = 1020, ID_ASPECT = 1030, ID_WIN = 1040, ID_FULLSCREEN = 1050,
-       ID_SHOWFPS = 1051, ID_CONTROLS = 1060, ID_ABOUT = 1061, ID_SCALE = 1070, ID_MOVIECOLOR = 1080 };
+       ID_SHOWFPS = 1051, ID_CONTROLS = 1060, ID_ABOUT = 1061, ID_SCALE = 1070, ID_MOVIECOLOR = 1080, ID_RENDER = 1090 };
 static HMENU g_menu;
 static WINDOWPLACEMENT wpl = { sizeof wpl };
 
@@ -476,6 +504,7 @@ static void update_checks(void)
     CheckMenuRadioItem(g_menu, ID_SCALE, ID_SCALE + 4, ID_SCALE + opt_scale, MF_BYCOMMAND);
     CheckMenuItem(g_menu, ID_FXAA, MF_BYCOMMAND | (opt_fxaa ? MF_CHECKED : MF_UNCHECKED));
     CheckMenuItem(g_menu, ID_MOVIECOLOR, MF_BYCOMMAND | (opt_moviecolor ? MF_CHECKED : MF_UNCHECKED));
+    CheckMenuRadioItem(g_menu, ID_RENDER + 1, ID_RENDER + 4, ID_RENDER + opt_render, MF_BYCOMMAND);
     CheckMenuItem(g_menu, ID_FULLSCREEN, MF_BYCOMMAND | (opt_fullscreen ? MF_CHECKED : MF_UNCHECKED));
     CheckMenuItem(g_menu, ID_SHOWFPS, MF_BYCOMMAND | (opt_showfps ? MF_CHECKED : MF_UNCHECKED));
 }
@@ -508,6 +537,16 @@ static HMENU build_menu(void)
     AppendMenuW(res, MF_SEPARATOR, 0, NULL);
     AppendMenuW(res, MF_STRING | MF_GRAYED, 0, L"The game's pictures and movies are 640x480: this is the size");
     AppendMenuW(res, MF_STRING | MF_GRAYED, 0, L"the Upscale Filter makes them before they fit the screen");
+    HMENU rend = CreatePopupMenu();
+    for (int s = 1; s <= 4; s++) {
+        wchar_t t[80];
+        swprintf(t, 80, L"%dx%ls", s, s == 1 ? L"  (original)" : s == 4 ? L"  (default)" : L"");
+        AppendMenuW(rend, MF_STRING, ID_RENDER + s, t);
+    }
+    AppendMenuW(rend, MF_SEPARATOR, 0, NULL);
+    AppendMenuW(rend, MF_STRING | MF_GRAYED, 0, L"The 3D of the away missions is drawn at this many times");
+    AppendMenuW(rend, MF_STRING | MF_GRAYED, 0, L"the original resolution (takes effect on the next mission)");
+    AppendMenuW(video, MF_POPUP, (UINT_PTR)rend, L"&Internal Resolution (3D)");
     AppendMenuW(video, MF_POPUP, (UINT_PTR)res, L"&Resolution");
     AppendMenuW(video, MF_POPUP, (UINT_PTR)asp, L"&Aspect Ratio");
     AppendMenuW(video, MF_POPUP, (UINT_PTR)filt, L"Upscale &Filter");
@@ -579,6 +618,7 @@ int present_menu_command(int id)
     else if (id >= ID_ASPECT && id <= ID_ASPECT + 2) opt_aspect = id - ID_ASPECT;
     else if (id == ID_FXAA) opt_fxaa = !opt_fxaa;
     else if (id == ID_MOVIECOLOR) opt_moviecolor = !opt_moviecolor;
+    else if (id > ID_RENDER && id <= ID_RENDER + 4) opt_render = id - ID_RENDER;
     else if (id >= ID_SCALE && id <= ID_SCALE + 4) opt_scale = id - ID_SCALE;
     else if (id == ID_SHOWFPS) { opt_showfps = !opt_showfps; if (!opt_showfps) SetWindowTextA(hwnd, GAME_TITLE); }
     else if (id > ID_WIN && id <= ID_WIN + 3) { set_client_size(640 * (id - ID_WIN), 480 * (id - ID_WIN)); return 1; }

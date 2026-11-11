@@ -47,6 +47,8 @@ static u32 obj_dd, obj_dd2;
 static int mode_bpp = 8;
 static u32 cur_pal[256];
 
+void dre_note_blit(u32 src_mem, u32 dmem, int dpitch, int dx, int dy, int sx, int sy);
+void dre_compose(u32 mem, int pitch, const u32 *pal);
 static Surf *S(u32 obj) { if (!obj) return NULL; u32 i = RD32(obj + 4); return (i < MAXS && surfs[i] && surfs[i]->obj == obj) ? surfs[i] : NULL; }
 static Pal *P(u32 obj) { if (!obj) return NULL; u32 i = RD32(obj + 4); return (i < 64 && pals[i] && pals[i]->obj == obj) ? pals[i] : NULL; }
 
@@ -119,10 +121,12 @@ static void present_now(void)
     present_pending = 0;
     last_present = now_ms();
     if (!primary) return;
+    hires_layer.valid = 0;
     if (primary->bpp == 16 && primary->w == 640 && present_movie()) { thr_yield(); return; }
     if (primary->bpp == 16) present_frame16(MEM + primary->mem, primary->pitch, primary->w, primary->h);
     else {
         if (primary->pal) memcpy(cur_pal, primary->pal->rgb, sizeof cur_pal);
+        dre_compose(primary->mem, primary->pitch, cur_pal);
         present_frame(MEM + primary->mem, primary->pitch, cur_pal);
     }
     thr_yield();
@@ -269,6 +273,7 @@ static void dd_CreateSurface(void)
         int w = (flags & 4) ? (int)RD32(d + 12) : 640, h = (flags & 2) ? (int)RD32(d + 8) : 480;
         if (!(caps & 0x800)) caps |= 0x4000;   /* in "video memory" unless asked for system memory */
         s = surf_new(w, h, bpp, caps | 0x40);
+        if (getenv(ENV("DDDEBUG"))) rt_log("ddraw: surface %08x %dx%d %d-bit mem %08x caps %x\n", s->obj, w, h, bpp, s->mem, caps);
     }
     if (flags & 0x10000) {   /* DDSD_CKSRCBLT */
         s->ck_on = 1; s->ck_lo = RD32(d + 0x40); s->ck_hi = RD32(d + 0x44);
@@ -342,6 +347,7 @@ static int key_match(Surf *s, u32 c) { return c >= s->ck_lo && c <= s->ck_hi; }
 
 static void blit(Surf *d, int dx, int dy, Surf *s, int sx, int sy, int w, int h, int keyed)
 {
+    dre_note_blit(s->mem, d->mem, d->pitch, dx, dy, sx, sy);
     if (sx < 0) { dx -= sx; w += sx; sx = 0; }
     if (sy < 0) { dy -= sy; h += sy; sy = 0; }
     if (dx < 0) { sx -= dx; w += dx; dx = 0; }
@@ -443,6 +449,8 @@ static void s_Flip(void)
         u32 m = s->mem;
         s->mem = s->back->mem;
         s->back->mem = m;
+        void dre_note_flip(u32 old_back, u32 new_front);
+        dre_note_flip(s->mem, s->mem);
         if (!(ARG(2) & 0x8)) vsync_wait();   /* not DDFLIP_NOVSYNC */
         present_now();
     }
@@ -486,6 +494,11 @@ static void s_Lock(void)
     u32 p = s->mem;
     if (ARG(1)) p += (s32)RD32(ARG(1) + 4) * s->pitch + (s32)RD32(ARG(1)) * (s->bpp / 8);
     fill_desc(s, ARG(2), p);
+    if (getenv(ENV("LOCKDEBUG"))) {
+        static int n;
+        if (n++ < 6000) rt_log("ddraw: lock %08x %dx%d %d-bit mem %08x%s from %08x\n", s->obj, s->w, s->h, s->bpp, s->mem,
+                              s == primary ? " (primary)" : "", RD32(cpu.r[R_ESP]));
+    }
     RET(DD_OK, 5);
 }
 

@@ -324,6 +324,10 @@ int main(int argc, char **argv)
     mem_init();
     api_init();
     thr_init();
+    extern int dre_hires_debug;
+    dre_hires_debug = getenv(ENV("DREDEBUG")) != NULL;
+    void prof_start(void);
+    prof_start();
     void wm_init(void);
     wm_init();
     reg_init();

@@ -108,6 +108,11 @@ int thr_current(void);
 u32 thr_tls_get(u32 i);
 int thr_wait_handle(u32 h, u32 ms);   /* 1 = signalled (acquired), 0 = timeout */
 
+/* an N x layer of live 3D drawn over part of the presented frame:
+   pix = w x h ARGB (alpha 0 = keep the frame), over rectangle x,y,rw,rh of the frame */
+typedef struct { const u32 *pix; int w, h; int x, y, rw, rh; int valid; } HiresLayer;
+extern HiresLayer hires_layer;
+
 /* registry (registry.c) */
 void reg_init(void);
 void reg_save(void);

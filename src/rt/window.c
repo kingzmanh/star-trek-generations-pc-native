@@ -537,3 +537,6 @@ int win_scale(void)
     int s = (w + 320) / 640;
     return s < 1 ? 1 : s > 4 ? 4 : s;
 }
+
+/* ms since the window was created (test timeline) */
+u32 win_time(void) { return now_ms() - t0; }
