@@ -171,6 +171,8 @@ void api_GetStockObject(void)
 }
 void api_DeleteObject(void)
 {
+    int gpal_free(u32 h);
+    if (gpal_free(ARG(0))) RET(1, 1);
     GObj *o = obj_get(ARG(0));
     if (o && o->kind != 4) { DeleteObject(o->h); o->used = 0; }
     RET(1, 1);
@@ -299,3 +301,6 @@ void api_LineTo(void) { RET(LineTo(host_dc(ARG(0)), (s32)ARG(1), (s32)ARG(2)), 3
 void api_Rectangle(void) { RET(Rectangle(host_dc(ARG(0)), (s32)ARG(1), (s32)ARG(2), (s32)ARG(3), (s32)ARG(4)), 5); }
 void api_SetPixel(void) { RET(SetPixel(host_dc(ARG(0)), (s32)ARG(1), (s32)ARG(2), col(ARG(3))), 4); }
 void api_GetPixel(void) { RET(GetPixel(host_dc(ARG(0)), (s32)ARG(1), (s32)ARG(2)), 3); }
+
+/* test report */
+int gdi_live(void) { int n = 0; for (int i = 1; i < NOBJ; i++) n += objs[i].used; return n; }

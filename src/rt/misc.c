@@ -391,6 +391,16 @@ void api_CreatePalette(void)
     RET(0, 1);
 }
 static u32 *gpal_of(u32 h) { u32 i = h & 0xffff; return (h >> 16) == 0x0e && i < NGPAL && gpal_used[i] ? gpal[i] : NULL; }
+/* gdi.c, DeleteObject: a palette handle - free its slot (they were never
+   freed: a long session made more than 31 and CreatePalette then failed) */
+int gpal_free(u32 h)
+{
+    u32 i = h & 0xffff;
+    if ((h >> 16) != 0x0e || i == 0 || i >= NGPAL) return 0;
+    gpal_used[i] = 0;
+    return 1;
+}
+int gpal_live(void) { int n = 0; for (int i = 1; i < NGPAL; i++) n += gpal_used[i]; return n; }
 void api_GetPaletteEntries(void)
 {
     u32 *p = gpal_of(ARG(0));
@@ -411,7 +421,31 @@ void api_AnimatePalette(void)
     RET(1, 4);
 }
 void api_GetSystemPaletteEntries(void) { syspal_entries(ARG(1), ARG(2), ARG(3)); RET(ARG(2), 4); }
-void api_GetNearestPaletteIndex(void) { RET(0, 2); }
+/* GetNearestPaletteIndex(pal, colorref): the closest entry (the options
+   screen's volume sliders take their colours this way - a stub returning 0
+   drew them black) */
+void api_GetNearestPaletteIndex(void)
+{
+    u32 cr = ARG(1);
+    const u32 *p = gpal_of(ARG(0));
+    u32 sys[256];
+    if (!p) {   /* not one of ours: the system palette */
+        u32 tmp = gmalloc(1024);
+        syspal_entries(0, 256, tmp);
+        for (int i = 0; i < 256; i++) sys[i] = RD32(tmp + 4 * i);
+        gfree(tmp);
+        p = sys;
+    }
+    if ((cr >> 24) == 1) RET(cr & 0xff, 2);   /* PALETTEINDEX */
+    int r = cr & 0xff, g = (cr >> 8) & 0xff, b = (cr >> 16) & 0xff, best = 0;
+    long bd = 0x7fffffff;
+    for (int i = 0; i < 256; i++) {   /* PALETTEENTRY: red, green, blue, flags */
+        int dr = (int)(p[i] & 0xff) - r, dg = (int)((p[i] >> 8) & 0xff) - g, db = (int)((p[i] >> 16) & 0xff) - b;
+        long d = (long)dr * dr + (long)dg * dg + (long)db * db;
+        if (d < bd) { bd = d; best = i; if (!d) break; }
+    }
+    RET((u32)best, 2);
+}
 
 /* ---------------- stand-ins: name, argument dwords, result ---------------- */
 typedef struct { const char *name; int nargs; u32 ret; } Stub;

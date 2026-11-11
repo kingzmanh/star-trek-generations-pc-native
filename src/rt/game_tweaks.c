@@ -32,6 +32,25 @@ void N_res_error(void)
     rt_wrap_orig("N_res_error", NULL)();
 }
 
+/* 4271ce (thiscall): a slider bar draws itself - STG_FILLDEBUG logs its
+   colour indices and the 16-bit colours they map to */
+void N_slider_draw(void)
+{
+    static int dbg = -1;
+    if (dbg < 0) dbg = getenv(ENV("FILLDEBUG")) != NULL;
+    if (dbg) {
+        u32 t = cpu.r[R_ECX];
+        u32 surf = RD32(RD32(t + 4) + 0xb8), tab = RD32(surf + 0x49c);
+        rt_log("slider %08x level %d segs %d colours %02x %02x %02x grad %02x %02x %02x %02x table %08x",
+               t, (s32)RD32(t + 0x90), (s32)RD32(t + 0x5c), RD8(t + 0x94), RD8(t + 0x95), RD8(t + 0x96),
+               RD8(t + 0x84), RD8(t + 0x85), RD8(t + 0x86), RD8(t + 0x87), tab);
+        if (tab) rt_log(" -> %04x %04x %04x | %04x %04x", RD16(tab + 2 * RD8(t + 0x94)), RD16(tab + 2 * RD8(t + 0x95)),
+                        RD16(tab + 2 * RD8(t + 0x96)), RD16(tab + 2 * RD8(t + 0x84)), RD16(tab + 2 * RD8(t + 0x85)));
+        rt_log("\n");
+    }
+    rt_wrap_orig("N_slider_draw", NULL)();
+}
+
 /* 4d6b16(sound): is it still playing? */
 void N_sound_playing(void)
 {

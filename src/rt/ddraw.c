@@ -518,7 +518,13 @@ static void s_Blt(void)
     u32 flags = ARG(4);
     int dx, dy, dw, dh;
     read_rect(ARG(1), &dx, &dy, &dw, &dh, d);
-    if (flags & 0x400) fill(d, dx, dy, dw, dh, RD32(ARG(5) + 0x50));   /* DDBLT_COLORFILL */
+    if (flags & 0x400) {   /* DDBLT_COLORFILL */
+        static int dbg = -1;
+        if (dbg < 0) dbg = getenv(ENV("FILLDEBUG")) != NULL;
+        if (dbg) rt_log("fill %d,%d %dx%d colour %04x from %08x caller %08x %08x\n", dx, dy, dw, dh, RD32(ARG(5) + 0x50), RD32(cpu.r[R_ESP]),
+                        RD32(cpu.r[R_EBP] + 4), RD32(RD32(cpu.r[R_EBP]) + 4));
+        fill(d, dx, dy, dw, dh, RD32(ARG(5) + 0x50));
+    }
     else {
         Surf *s = S(ARG(2));
         if (!s) RET(DDERR_INVALIDPARAMS, 6);

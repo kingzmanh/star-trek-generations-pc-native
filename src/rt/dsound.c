@@ -342,3 +342,6 @@ void api_DirectSoundCreate(void)
     rt_log("DirectSoundCreate\n");
     RET(DS_OK, 3);
 }
+
+/* test report: sound buffers alive */
+int ds_live_buffers(void) { int n = 0; for (int i = 0; i < MAXB; i++) n += bufs[i] != NULL; return n; }

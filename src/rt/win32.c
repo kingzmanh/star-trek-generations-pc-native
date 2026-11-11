@@ -73,7 +73,7 @@ static void api_SetCurrentDirectoryA(void)
 }
 
 /* ---------------- handles (files, find, mutex...) ---------------- */
-#define MAXF 256
+#define MAXF 16384   /* the game never closes its thread handles: a long session makes thousands (values stay below the window range 0x20000) */
 static GH ghandles[MAXF];
 
 u32 gh_new(int kind, HANDLE h)
@@ -617,3 +617,6 @@ void api_init(void)
     WR32(str_envw + 2 * strlen(env), 0);
     WR32(str_envw + 2 * strlen(env) + 4, 0);
 }
+
+/* test report: guest handles in use */
+int gh_live(void) { int n = 0; for (int i = 4; i < MAXF; i++) n += ghandles[i].used; return n; }

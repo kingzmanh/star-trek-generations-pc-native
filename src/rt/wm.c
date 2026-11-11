@@ -864,3 +864,6 @@ void wm_init(void)
 {
     defproc_thunk = api_resolve("USER32.DLL", "DefWindowProcA");
 }
+
+/* test report */
+int wnd_live(void) { int n = 0; for (int i = 0; i < NWND; i++) n += wnd[i].used; return n; }

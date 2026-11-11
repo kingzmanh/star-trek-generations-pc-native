@@ -38,7 +38,7 @@ static int tls_used[NTLS];
 extern u32 rt_tail_ret;
 
 typedef struct { int used, kind; int owner, count; int manual, signaled; } Sync;
-#define NSYNC 128
+#define NSYNC 4096
 static Sync sync[NSYNC];
 
 int thr_current(void) { return cur; }
@@ -463,6 +463,14 @@ void thr_signal(u32 h)
 void thr_dump(void)
 {
     rt_log("  host image base %p\n", (void *)GetModuleHandleA(NULL));
+    {   /* leak check: what is still allocated */
+        int ds_live_buffers(void), gh_live(void), gpal_live(void), gdi_live(void), wnd_live(void);
+        int ns = 0, nt = 0, nl = 0;
+        for (int i = 0; i < NSYNC; i++) ns += sync[i].used;
+        for (int i = 0; i < NTHR; i++) { nt += thr[i].used; nl += thr[i].used && !thr[i].finished; }
+        rt_log("  live: %d handles, %d mutex/event, %d thread slots (%d running), %d sound buffers, %d palettes, %d gdi objects, %d windows\n",
+               gh_live(), ns, nt, nl, ds_live_buffers(), gpal_live(), gdi_live(), wnd_live());
+    }
     const char *m = getenv(ENV("DUMPMEM"));
     while (m && *m) {
         u32 a = (u32)strtoul(m, (char **)&m, 16), n = 64;
