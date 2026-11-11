@@ -123,7 +123,11 @@ static void present_now(void)
     if (!primary) return;
     hires_layer.valid = 0;
     if (primary->bpp == 16 && primary->w == 640 && present_movie()) { thr_yield(); return; }
-    if (primary->bpp == 16) present_frame16(MEM + primary->mem, primary->pitch, primary->w, primary->h);
+    if (primary->bpp == 16) {
+        void space_compose(u32 mem, int pitch);
+        space_compose(primary->mem, primary->pitch);
+        present_frame16(MEM + primary->mem, primary->pitch, primary->w, primary->h);
+    }
     else {
         if (primary->pal) memcpy(cur_pal, primary->pal->rgb, sizeof cur_pal);
         dre_compose(primary->mem, primary->pitch, cur_pal);

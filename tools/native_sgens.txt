@@ -2,3 +2,7 @@
 # DRE (away missions) internal resolution: src/rt/hires_dre.c
 4b58a0 N_dre_setsize wrap
 4b5a90 N_dre_render wrap
+# space combat viewscreen internal resolution: src/rt/hires_space.c
+4e7eb0 N_sp_window wrap
+4e2d70 N_sp_begin wrap
+494b64 N_sp_convert wrap
