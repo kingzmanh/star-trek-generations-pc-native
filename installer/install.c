@@ -1,7 +1,6 @@
-/* The install itself: copies the user's the game CD (it is then always
- * "in the drive"), lays out what the original DOS installer put on the hard
- * disk, and puts the PC executable in place with an icon made from the
- * game's own emblem picture on the CD. */
+/* The install itself: copies the user's two game CDs (they are then always
+ * "in the drive"), lays out what the original installer put on the hard
+ * disk, and puts the PC executable in place with the game's own icon. */
 #include "setup.h"
 #include <stdlib.h>
 #include <string.h>
@@ -39,6 +38,63 @@ int inject_icon_ico(const char *exe, const u8 *d, size_t n)
     if (!EndUpdateResourceA(u, FALSE)) return fail("cannot write the game executable's icon");
     setup_log("icon: %d images from the CD", cnt);
     return 1;
+}
+
+/* ---------- game icon: the icon group of another exe (the game's own) ---------- */
+int inject_icon_from_exe(const char *exe, const char *src)
+{
+    HMODULE m = LoadLibraryExA(src, NULL, LOAD_LIBRARY_AS_DATAFILE | LOAD_LIBRARY_AS_IMAGE_RESOURCE);
+    if (!m) return fail("cannot open the game program for its icon");
+    /* first icon group */
+    struct { LPSTR name; int found; } first = {0};
+    BOOL CALLBACK pick(HMODULE mm, LPCSTR type, LPSTR name, LONG_PTR p);
+    EnumResourceNamesA(m, (LPCSTR)RT_GROUP_ICON, pick, (LONG_PTR)&first);
+    int ok = 0;
+    HRSRC r = first.found ? FindResourceA(m, first.name, (LPCSTR)RT_GROUP_ICON) : NULL;
+    if (r) {
+        const u8 *g = LockResource(LoadResource(m, r));
+        DWORD gn = SizeofResource(m, r);
+        int cnt = gn >= 6 ? g[4] | g[5] << 8 : 0;
+        if (cnt && 6 + 14u * cnt <= gn) {
+            /* rebuild an .ico file: header, 16-byte entries, images */
+            size_t total = 6 + 16 * (size_t)cnt;
+            for (int i = 0; i < cnt; i++) {
+                const u8 *e = g + 6 + 14 * i;
+                HRSRC ri = FindResourceA(m, MAKEINTRESOURCEA(e[12] | e[13] << 8), (LPCSTR)RT_ICON);
+                if (ri) total += SizeofResource(m, ri);
+            }
+            u8 *ico = calloc(1, total);
+            ico[2] = 1;
+            ico[4] = (u8)cnt;
+            size_t off = 6 + 16 * (size_t)cnt;
+            for (int i = 0; i < cnt; i++) {
+                const u8 *e = g + 6 + 14 * i;
+                HRSRC ri = FindResourceA(m, MAKEINTRESOURCEA(e[12] | e[13] << 8), (LPCSTR)RT_ICON);
+                DWORD sz = ri ? SizeofResource(m, ri) : 0;
+                u8 *o = ico + 6 + 16 * i;
+                memcpy(o, e, 8);
+                memcpy(o + 8, &sz, 4);
+                u32 of32 = (u32)off;
+                memcpy(o + 12, &of32, 4);
+                if (sz) memcpy(ico + off, LockResource(LoadResource(m, ri)), sz);
+                off += sz;
+            }
+            ok = inject_icon_ico(exe, ico, total);
+            free(ico);
+        }
+    }
+    if (first.found && !IS_INTRESOURCE(first.name)) free(first.name);
+    FreeLibrary(m);
+    return ok;
+}
+
+BOOL CALLBACK pick(HMODULE mm, LPCSTR type, LPSTR name, LONG_PTR p)
+{
+    (void)mm; (void)type;
+    struct { LPSTR name; int found; } *f = (void *)p;
+    f->name = IS_INTRESOURCE(name) ? name : _strdup(name);
+    f->found = 1;
+    return FALSE;
 }
 
 /* ---------- game icon: from an LBM picture on the CD ---------- */
@@ -221,51 +277,38 @@ static int extract_prebuilt(const char *dst)
 
 int prebuilt_available(void) { return FindResourceA(NULL, "GAMEEXE", (LPCSTR)RT_RCDATA) != NULL; }
 
-static int copy_dir(const char *src, const char *dst, const char *pattern)
-{
-    char pat[MAX_PATH * 2];
-    snprintf(pat, sizeof pat, "%s\\%s", src, pattern);
-    make_dirs(dst);
-    WIN32_FIND_DATAA fd;
-    HANDLE h = FindFirstFileA(pat, &fd);
-    if (h == INVALID_HANDLE_VALUE) return 0;
-    int n = 0;
-    do {
-        if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
-        char s[MAX_PATH * 3], d[MAX_PATH * 3];
-        snprintf(s, sizeof s, "%s\\%s", src, fd.cFileName);
-        snprintf(d, sizeof d, "%s\\%s", dst, fd.cFileName);
-        if (copy_file(s, d, NULL)) n++;
-    } while (FindNextFileA(h, &fd));
-    FindClose(h);
-    return n;
-}
-
 /* ---------- the whole install ---------- */
 int do_install(const InstallOpts *o, void (*cb)(u64, u64, void *), void *user)
 {
-    char p[MAX_PATH * 2], q[MAX_PATH * 2], game[MAX_PATH * 2], hd[MAX_PATH * 2], cd[MAX_PATH * 2];
+    char p[MAX_PATH * 2], game[MAX_PATH * 2], hd[MAX_PATH * 2], cd[MAX_PATH * 2];
     setup_log("Install to %s", o->dir);
     if (!prebuilt_available()) return fail("this setup does not contain the game executable");
     CdSrc *c = cd_open(o->cd);
-    if (!c) return fail("the CD is not a readable disc, image or folder");
-    if (!game_is_cd(c)) { cd_close(c); return fail("this is not the " GAME_TITLE " CD"); }
+    if (!c) return fail("disc 1 is not a readable disc, image or folder");
+    if (!game_is_cd(c)) { cd_close(c); return fail("this is not disc 1 of " GAME_TITLE); }
+    CdSrc *c2 = cd_open(o->cd2);
+    if (!c2) { cd_close(c); return fail("disc 2 is not a readable disc, image or folder"); }
+    if (!game_is_cd2(c2)) { cd_close(c); cd_close(c2); return fail("this is not disc 2 of " GAME_TITLE); }
 
     Progress pr = {0};
     pr.cb = cb;
     pr.user = user;
-    pr.total = cd_total_bytes(c) + (8ull << 20);
+    pr.total = cd_total_bytes(c) + cd_total_bytes(c2) + (8ull << 20);
     u64 bytes = pr.total + (12ull << 20);
 
     snprintf(game, sizeof game, "%s\\game", o->dir);
     snprintf(hd, sizeof hd, "%s\\hd", game);
     snprintf(cd, sizeof cd, "%s\\cd", game);
-    if (!make_dirs(hd)) { cd_close(c); return fail("cannot create the install folder"); }
+    if (!make_dirs(hd)) { cd_close(c); cd_close(c2); return fail("cannot create the install folder"); }
 
-    /* 1. the disc: drive D: of the game, always in the drive */
-    setup_log("Copying %s ...", cd_describe(c));
-    if (!cd_copy_all(c, cd, &pr)) { cd_close(c); return fail("copying the CD failed"); }
+    /* 1. the discs: drive D: of the game, both always in the drive (disc 2
+       holds only GENS, merged into disc 1's) */
+    setup_log("Copying disc 1: %s ...", cd_describe(c));
+    if (!cd_copy_all(c, cd, &pr)) { cd_close(c); cd_close(c2); return fail("copying disc 1 failed"); }
     cd_close(c);
+    setup_log("Copying disc 2: %s ...", cd_describe(c2));
+    if (!cd_copy_all(c2, cd, &pr)) { cd_close(c2); return fail("copying disc 2 failed"); }
+    cd_close(c2);
 
     /* 2. what the DOS installer put on the hard disk (game_install.c) */
     setup_log("Setting up the game files ...");
@@ -276,6 +319,10 @@ int do_install(const InstallOpts *o, void (*cb)(u64, u64, void *), void *user)
     char exe[MAX_PATH * 2];
     snprintf(exe, sizeof exe, "%s\\" GAME_SHORT ".exe", o->dir);
     if (!extract_prebuilt(exe)) return 0;
+    if (game_icon_exe()) {
+        snprintf(p, sizeof p, "%s\\%s", hd, game_icon_exe());
+        inject_icon_from_exe(exe, p);
+    }
     if (game_icon_lbm()) {
         snprintf(p, sizeof p, "%s\\%s", cd, game_icon_lbm());
         size_t ln;

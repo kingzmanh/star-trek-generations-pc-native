@@ -43,8 +43,15 @@ engine at 4x (2016x1008). The HUD and pictures stay as drawn, while all 3D geome
 
 ## Installing
 
-No release yet – the port is still being tested. A setup that installs from your CDs or disc images is
-in `installer/` and will be published under [Releases](../../releases) once testing is done.
+1. Download **`Star Trek Generations PC Setup.exe`** from [Releases](../../releases).
+2. Run it and point it at your two game CDs: the discs, images (`.iso`, `.bin`/`.cue`) or folders with a
+   copy of each disc. Images next to the setup and discs in the drives are found by themselves. Choose a
+   folder and press Install.
+3. Start the game from the Start menu or desktop shortcut.
+
+The setup copies both CDs (about 1.1 GB, so no disc swapping ever) and unpacks the game's own program
+from the CD the way the original installer did. Nothing is downloaded. An uninstaller is included
+(Apps & features).
 
 **Options** (menu bar of the game window, or `generations.ini` next to the exe): Internal Resolution (3D)
 1x–4x, Resolution, Aspect, Upscale Filter, Sharpening, FXAA, Movies in full colour, Movies fill the screen,
@@ -53,7 +60,8 @@ Fullscreen, Show FPS.
 ## Status
 
 Work in progress (v0.1). Tested so far: intro and title movies, Stellar Cartography, briefings, the first
-away mission (walking, scanning, phasers, transporting), space combat, the options screen.
+away mission (walking, scanning, phasers, transporting), space combat, the options screen, New Game,
+installing and uninstalling.
 Not tested yet: saving and loading, later missions, the whole story.
 
 ## Building
@@ -87,7 +95,7 @@ mission.
 | `tools/recomp.py`, `tools/x86an.py`, `tools/pe.py` | x86 -> C recompiler, code analysis, PE loader |
 | `tools/native_sgens.txt` | game functions wrapped by native C |
 | `re/sgens/functions.tsv` | Ghidra's function list of `sgens.exe` |
-| `installer/` | the setup (not released yet) |
+| `installer/` | the setup: both CDs, InstallShield `SUPP.Z` unpacking (`is3.c`), uninstaller |
 
 Fan preservation project, not affiliated with Paramount, MicroProse or the game's publishers.
 Star Trek and related marks are trademarks of their owners.

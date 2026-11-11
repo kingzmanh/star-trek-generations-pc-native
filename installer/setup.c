@@ -1,7 +1,7 @@
 /* the game - PC Native setup.
  *
  * Usage: just run it.  Command line (testing / scripted installs):
- *   setup.exe /silent /cd <iso|cue|drive|folder> /dir <install folder> [/nodesktop] [/nostartmenu]
+ *   setup.exe /silent /cd <disc 1: iso|cue|drive|folder> /cd2 <disc 2> /dir <install folder> [/nodesktop] [/nostartmenu]
  *   uninstall.exe /uninstall [/quiet]
  */
 #include "install.h"
@@ -13,7 +13,7 @@
 #include <shlobj.h>
 #include <shellapi.h>
 
-static HWND hwnd, e_cd, e_dir, c_desk, c_start, b_install, b_close, prog, st, lst;
+static HWND hwnd, e_cd, e_cd2, e_dir, c_desk, c_start, b_install, b_close, prog, st, lst;
 static HFONT font;
 static FILE *logf;
 static int busy, silent, done_ok, quiet;
@@ -54,12 +54,13 @@ static DWORD WINAPI worker(LPVOID p)
 static void find_defaults(void)
 {
     DWORD drives = GetLogicalDrives();
-    for (int i = 2; i < 26 && !opts.cd[0]; i++) {
+    for (int i = 2; i < 26; i++) {
         if (!(drives & (1u << i))) continue;
         char root[4] = {(char)('A' + i), ':', '\\', 0};
         if (GetDriveTypeA(root) != DRIVE_CDROM) continue;
         CdSrc *c = cd_open(root);
         if (c && game_is_cd(c)) snprintf(opts.cd, sizeof opts.cd, "%s", root);
+        else if (c && !opts.cd2[0] && game_is_cd2(c)) snprintf(opts.cd2, sizeof opts.cd2, "%s", root);
         if (c) cd_close(c);
     }
     char me[MAX_PATH * 2];
@@ -75,9 +76,10 @@ static void find_defaults(void)
             const char *ext = strrchr(fd.cFileName, '.');
             char full[MAX_PATH * 3];
             snprintf(full, sizeof full, "%s\\%s", me, fd.cFileName);
-            if (!opts.cd[0] && ext && (!_stricmp(ext, ".iso") || !_stricmp(ext, ".cue"))) {
+            if ((!opts.cd[0] || !opts.cd2[0]) && ext && (!_stricmp(ext, ".iso") || !_stricmp(ext, ".cue"))) {
                 CdSrc *c = cd_open(full);
-                if (c && game_is_cd(c)) snprintf(opts.cd, sizeof opts.cd, "%s", full);
+                if (c && !opts.cd[0] && game_is_cd(c)) snprintf(opts.cd, sizeof opts.cd, "%s", full);
+                else if (c && !opts.cd2[0] && game_is_cd2(c)) snprintf(opts.cd2, sizeof opts.cd2, "%s", full);
                 if (c) cd_close(c);
             }
         } while (FindNextFileA(h, &fd));
@@ -121,7 +123,7 @@ static void browse_folder(HWND edit, const char *title)
 }
 
 /* ---------- window ---------- */
-enum { ID_CDF = 101, ID_CDD, ID_DIR, ID_INSTALL, ID_CLOSE };
+enum { ID_CDF = 101, ID_CDD, ID_DIR, ID_INSTALL, ID_CLOSE, ID_CD2F, ID_CD2D };
 
 static HWND mk(const char *cls, const char *text, DWORD style, int x, int y, int w, int h, int id)
 {
@@ -135,13 +137,18 @@ static void build_ui(void)
 {
     int y = 14;
     mk("STATIC", "Install " GAME_TITLE " as a native Windows game.\n"
-                 "You need your copy of " GAME_TITLE ": the CD, an ISO / BIN+CUE image, or a copied folder.",
+                 "You need your copy of " GAME_TITLE ": both CDs, as discs, ISO / BIN+CUE images or copied folders.",
        0, 16, y, 600, 36, 0);
     y += 48;
-    mk("STATIC", "CD:", 0, 16, y + 4, 90, 20, 0);
+    mk("STATIC", "Disc 1:", 0, 16, y + 4, 90, 20, 0);
     e_cd = mk("EDIT", opts.cd, ES_AUTOHSCROLL, 110, y, 360, 24, 0);
     mk("BUTTON", "Image...", 0, 478, y, 66, 24, ID_CDF);
     mk("BUTTON", "Folder...", 0, 548, y, 66, 24, ID_CDD);
+    y += 32;
+    mk("STATIC", "Disc 2:", 0, 16, y + 4, 90, 20, 0);
+    e_cd2 = mk("EDIT", opts.cd2, ES_AUTOHSCROLL, 110, y, 360, 24, 0);
+    mk("BUTTON", "Image...", 0, 478, y, 66, 24, ID_CD2F);
+    mk("BUTTON", "Folder...", 0, 548, y, 66, 24, ID_CD2D);
     y += 32;
     mk("STATIC", "Install to:", 0, 16, y + 4, 90, 20, 0);
     e_dir = mk("EDIT", opts.dir, ES_AUTOHSCROLL, 110, y, 360, 24, 0);
@@ -155,7 +162,7 @@ static void build_ui(void)
     prog = mk(PROGRESS_CLASSA, "", 0, 16, y, 598, 18, 0);
     SendMessageA(prog, PBM_SETRANGE32, 0, 1000);
     y += 24;
-    st = mk("STATIC", "Ready. About 500 MB of free space is needed.", 0, 16, y, 598, 20, 0);
+    st = mk("STATIC", "Ready. About 1.2 GB of free space is needed.", 0, 16, y, 598, 20, 0);
     y += 24;
     lst = mk("LISTBOX", "", WS_VSCROLL | WS_BORDER | LBS_NOINTEGRALHEIGHT, 16, y, 598, 110, 0);
     y += 120;
@@ -166,11 +173,12 @@ static void build_ui(void)
 static void start_install(void)
 {
     GetWindowTextA(e_cd, opts.cd, sizeof opts.cd);
+    GetWindowTextA(e_cd2, opts.cd2, sizeof opts.cd2);
     GetWindowTextA(e_dir, opts.dir, sizeof opts.dir);
     opts.startmenu = SendMessageA(c_start, BM_GETCHECK, 0, 0) == BST_CHECKED;
     opts.desktop = SendMessageA(c_desk, BM_GETCHECK, 0, 0) == BST_CHECKED;
-    if (!opts.cd[0] || !opts.dir[0]) {
-        MessageBoxA(hwnd, "Please choose the CD and the install folder.", GAME_TITLE " setup", MB_ICONWARNING);
+    if (!opts.cd[0] || !opts.cd2[0] || !opts.dir[0]) {
+        MessageBoxA(hwnd, "Please choose both discs and the install folder.", GAME_TITLE " setup", MB_ICONWARNING);
         return;
     }
     busy = 1;
@@ -185,8 +193,10 @@ static LRESULT CALLBACK wndproc(HWND h, UINT m, WPARAM w, LPARAM l)
     switch (m) {
     case WM_COMMAND:
         switch (LOWORD(w)) {
-        case ID_CDF: browse_file(e_cd, "CD images (*.iso;*.cue;*.bin)\0*.iso;*.cue;*.bin\0All files\0*.*\0", GAME_TITLE " CD"); break;
-        case ID_CDD: browse_folder(e_cd, GAME_TITLE " CD (drive or folder)"); break;
+        case ID_CDF: browse_file(e_cd, "CD images (*.iso;*.cue;*.bin)\0*.iso;*.cue;*.bin\0All files\0*.*\0", GAME_TITLE " disc 1"); break;
+        case ID_CDD: browse_folder(e_cd, GAME_TITLE " disc 1 (drive or folder)"); break;
+        case ID_CD2F: browse_file(e_cd2, "CD images (*.iso;*.cue;*.bin)\0*.iso;*.cue;*.bin\0All files\0*.*\0", GAME_TITLE " disc 2"); break;
+        case ID_CD2D: browse_folder(e_cd2, GAME_TITLE " disc 2 (drive or folder)"); break;
         case ID_DIR: browse_folder(e_dir, "Install folder"); break;
         case ID_INSTALL:
             if (done_ok) {
@@ -294,13 +304,14 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show)
     logf = fopen(logp, "w");
     setup_log("setup started");
     find_defaults();
-    setup_log("defaults: cd '%s' dir '%s'", opts.cd, opts.dir);
+    setup_log("defaults: cd '%s' cd2 '%s' dir '%s'", opts.cd, opts.cd2, opts.dir);
     for (int i = 1; i < argc; i++) {
         const char *a = argv[i], *v = i + 1 < argc ? argv[i + 1] : "";
         if (!_stricmp(a, "/silent")) silent = 1;
         else if (!_stricmp(a, "/nodesktop")) opts.desktop = 0;
         else if (!_stricmp(a, "/nostartmenu")) opts.startmenu = 0;
         else if (!_stricmp(a, "/cd")) { snprintf(opts.cd, sizeof opts.cd, "%s", v); i++; }
+        else if (!_stricmp(a, "/cd2")) { snprintf(opts.cd2, sizeof opts.cd2, "%s", v); i++; }
         else if (!_stricmp(a, "/dir")) { snprintf(opts.dir, sizeof opts.dir, "%s", v); i++; }
     }
     if (silent) {
@@ -322,7 +333,7 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show)
     wc.lpszClassName = GAME_ID "Setup";
     wc.hIcon = LoadIconA(inst, MAKEINTRESOURCEA(1));
     RegisterClassA(&wc);
-    RECT r = {0, 0, 630, 420};
+    RECT r = {0, 0, 630, 452};
     AdjustWindowRect(&r, WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX, FALSE);
     hwnd = CreateWindowA(GAME_ID "Setup", GAME_TITLE " - PC Native Setup", WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX,
                          CW_USEDEFAULT, CW_USEDEFAULT, r.right - r.left, r.bottom - r.top, NULL, NULL, inst, NULL);

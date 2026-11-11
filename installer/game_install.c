@@ -1,41 +1,53 @@
-/* What the installer does that is particular to The Neverhood.
+/* What the installer does that is particular to Star Trek Generations.
  *
- * The CD is copied whole to <install>\game\cd (the game's D: drive, always
- * "in the drive").  <install>\game\hd is C:\NEVERHOOD, what the original
- * setup95.exe installed: the game exe and the Smacker DLL (their code is in
- * our exe; their data and resources are read from these files) and HD.BLB. */
+ * The game comes on two CDs; each has a GENS folder with its share of the
+ * missions and movies.  Both are copied to <install>\game\cd (the game's D:
+ * drive), disc 2's GENS merged into disc 1's, so no disc is ever asked for.
+ * <install>\game\hd is C:\STGENS, what the original InstallShield setup put
+ * on the hard disk: sgens.exe and sgens.ini from SUPP.Z on disc 1 (the game
+ * code is in our exe; its data and resources are read from sgens.exe), plus
+ * the empty SAVEGAME and WORLD folders. */
 #include "setup.h"
 #include <string.h>
 #include "install.h"
 
-int game_is_cd(CdSrc *c)
+static int has_all(CdSrc *c, const char *const *files)
 {
-    static const char *files[] = GAME_CD_FILES;
     if (!c) return 0;
     for (int i = 0; files[i]; i++)
         if (!cd_exists(c, files[i])) { setup_log("CD check: %s missing", files[i]); return 0; }
     return 1;
 }
 
+int game_is_cd(CdSrc *c)
+{
+    static const char *const files[] = GAME_CD_FILES;
+    return has_all(c, files);
+}
+
+int game_is_cd2(CdSrc *c)
+{
+    static const char *const files[] = GAME_CD2_FILES;
+    return has_all(c, files);
+}
+
 int game_install_files(const char *cd, const char *hd)
 {
-    static const char *map[][2] = {
-        { "SETUP\\NHC.EXE", "nhc.exe" },
-        { "SETUP\\SMACKW32.DLL", "smackw32.dll" },
-        { "DATA\\HD.BLB", "HD.BLB" },
-    };
-    for (size_t i = 0; i < sizeof map / sizeof *map; i++) {
-        char s[MAX_PATH * 2], d[MAX_PATH * 2];
-        snprintf(s, sizeof s, "%s\\%s", cd, map[i][0]);
-        snprintf(d, sizeof d, "%s\\%s", hd, map[i][1]);
-        if (!copy_file(s, d, NULL)) {
-            setup_log("cannot copy %s", s);
-            MessageBoxA(NULL, "Copying the game files from the CD failed.", GAME_TITLE " setup", MB_ICONERROR);
-            return 0;
-        }
+    char p[MAX_PATH * 2];
+    snprintf(p, sizeof p, "%s\\SUPP.Z", cd);
+    static const char *const want[] = {"sgens.exe", "sgens.ini", NULL};
+    if (is3_extract(p, hd, want) != 2) {
+        MessageBoxA(NULL, "Unpacking the game program from SUPP.Z on disc 1 failed.", GAME_TITLE " setup", MB_ICONERROR);
+        return 0;
     }
+    snprintf(p, sizeof p, "%s\\SAVEGAME", hd);
+    make_dirs(p);
+    snprintf(p, sizeof p, "%s\\WORLD", hd);
+    make_dirs(p);
     return 1;
 }
 
+/* the exe's icon comes from the game's own sgens.exe */
+const char *game_icon_exe(void) { return "sgens.exe"; }
 const char *game_icon_lbm(void) { return GAME_ICON_LBM; }
 const char *game_icon_ico(void) { return GAME_ICON_ICO; }
