@@ -272,10 +272,19 @@ void api_CreateWindowExA(void)
     RET(h, 12);
 }
 
+/* a window went away or was hidden: what was under it needs painting again
+   (Windows sends WM_PAINT to the uncovered windows) */
+static void uncover(void)
+{
+    for (int i = 0; i < NWND; i++)
+        if (wnd[i].used && !wnd[i].destroying && (wnd[i].style & WS_VISIBLE)) wnd[i].dirty = 1;
+}
+
 static void destroy_rec(u32 h)
 {
     GWnd *w = W(h);
     if (!w || w->destroying) return;
+    if (w->style & WS_VISIBLE) { w->destroying = 1; uncover(); }
     w->destroying = 1;
     if (w->style & WS_VISIBLE) wm_send(h, WM_SHOWWINDOW, 0, 0);
     wm_send(h, WM_DESTROY, 0, 0);
@@ -547,6 +556,7 @@ static void show(GWnd *w, int on)
     if (on) w->style |= WS_VISIBLE; else w->style &= ~WS_VISIBLE;
     wm_send(h, WM_SHOWWINDOW, on, 0);
     w->dirty = on;
+    if (!on) uncover();
     if (on && !(w->style & WS_CHILD)) {
         win_guest_shown();
         if (active_wnd != h) {
