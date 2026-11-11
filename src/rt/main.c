@@ -8,6 +8,7 @@
  */
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include <mmsystem.h>
 #include <stdlib.h>
 #include <string.h>
 #include <SDL2/SDL.h>
@@ -359,6 +360,10 @@ int main(int argc, char **argv)
     if (getenv(ENV("HIDDEN"))) SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX | SEM_NOOPENFILEERRORBOX);
 
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_TIMER) < 0) rt_fatal("SDL: %s", SDL_GetError());
+    /* 1 ms timer resolution: the game's clocks are timeGetTime, and Windows
+       11 keeps a process at ~15.6 ms steps unless it asks (space combat's
+       clock stood still for whole frames) - also makes Sleep(1) 1 ms */
+    timeBeginPeriod(1);
     mem_init();
     api_init();
     thr_init();

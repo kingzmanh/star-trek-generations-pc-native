@@ -282,6 +282,22 @@ static void api_Sleep(void)
     RET(0, 1);
 }
 
+/* wait until the performance counter reaches 'until' while the other guest
+   threads run (game_tweaks / hires: frame pacing) */
+void thr_wait_qpc(long long until)
+{
+    LARGE_INTEGER t;
+    QueryPerformanceCounter(&t);
+    if (t.QuadPart >= until) return;
+    thr[cur].blocked = 1;
+    do {
+        if (cur == 0) win_pump(0);
+        thr_yield();
+        QueryPerformanceCounter(&t);
+    } while (t.QuadPart < until);
+    thr[cur].blocked = 0;
+}
+
 /* ---------------- sync objects ---------------- */
 static void api_CreateMutexA(void)
 {

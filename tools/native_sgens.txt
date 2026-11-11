@@ -11,3 +11,4 @@
 4ca62f N_movie_copy wrap
 # game tweaks: src/rt/game_tweaks.c
 4d6b16 N_sound_playing wrap
+47b83e N_combat_idle wrap

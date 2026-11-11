@@ -40,6 +40,13 @@
 static u32 vp_args[8];
 static int have_args, active, pass_n;
 static u8 save_blk[BLK_N];
+static int sp_debug = -1;
+/* block offsets of the window/projection fields derived from the size */
+static const u8 VP_FIELDS[] = {
+    0x00, 0x04, 0x08, 0x0c, 0x14, 0x18, 0x1c, 0x20, 0x24, 0x28, 0x2c, 0x30, 0x34, 0x3c, 0x40,
+    0x80, 0x84, 0x88, 0x8c, 0x9c, 0xa0, 0xa4, 0xa8, 0xac, 0xb0, 0xb4, 0xb8, 0xbc, 0xc0, 0xc4,
+    0xc8, 0xcc, 0xd0,
+};
 static u32 save_w, save_h, save_pitch, save_buf, save_z;
 static u8 *lo_copy;
 static u16 tab[256];
@@ -63,10 +70,84 @@ void N_sp_window(void)
     rt_wrap_orig("N_sp_window", NULL)();
 }
 
+/* The space frame (494d18) steps the simulation by the game clock
+   (565940, ~291 ticks/s from timeGetTime) since the last frame, but forces a
+   step of 0 up to 1 tick.  Built for 15-30 fps; unpaced it ran ~700 fps, so
+   most frames got a tick that had not passed: combat ran ~2.4x too fast and
+   the AI's steering wobbled.  Frames are paced to the display refresh
+   (60-120 fps: always at least 2 ticks per frame).  STG_FPSCAP=n overrides
+   (0 = unpaced), STG_CAMLOG=1 logs every ship's position/orientation per
+   frame to camlog.txt. Paced in the combat loop (47b83e) before it reads the clock. */
+static void pace_frame(void)
+{
+    static int cap = -1;
+    static LARGE_INTEGER fq;
+    static long long next;
+    if (cap < 0) {
+        QueryPerformanceFrequency(&fq);
+        DEVMODEA dm = { .dmSize = sizeof dm };
+        int hz = EnumDisplaySettingsA(NULL, ENUM_CURRENT_SETTINGS, &dm) ? (int)dm.dmDisplayFrequency : 60;
+        cap = hz < 60 ? 60 : hz > 120 ? 120 : hz;
+        const char *c = getenv(ENV("FPSCAP"));
+        if (c) cap = atoi(c);
+        rt_log("space: frames paced to %d fps\n", cap);
+    }
+    if (cap <= 0) return;
+    /* spaced from when the last frame really started: the wait lets the
+       other guest threads run and can overshoot, and a deadline chain would
+       then let the next frame through at once (a step of 0 again) */
+    if (next) thr_wait_qpc(next);
+    LARGE_INTEGER t;
+    QueryPerformanceCounter(&t);
+    next = t.QuadPart + fq.QuadPart / cap;
+}
+
+/* 47b83e: one turn of the space combat loop (idle handler) - reads the
+   clock, then runs the frame: pace before the clock is read */
+void N_combat_idle(void)
+{
+    pace_frame();
+    rt_wrap_orig("N_combat_idle", NULL)();
+}
+
+static void camlog_frame(void)
+{
+    static int on = -1;
+    static FILE *f;
+    static LARGE_INTEGER fq;
+    if (on < 0) {
+        on = getenv(ENV("CAMLOG")) != NULL;
+        QueryPerformanceFrequency(&fq);
+        if (on) { char p[700]; snprintf(p, sizeof p, "%s/camlog.txt", rt_exe_dir); f = fopen(p, "w"); }
+    }
+    if (!on || !f) return;
+    LARGE_INTEGER t; QueryPerformanceCounter(&t);
+    double ms = (double)t.QuadPart * 1000.0 / (double)fq.QuadPart;
+    u32 list = RD32(0x5700d0u);
+    float dt; u32 dtr = RD32(0x570130u); memcpy(&dt, &dtr, 4);
+    float div; u32 dvr = RD32(0x5370dcu); memcpy(&div, &dvr, 4);
+    fprintf(f, "F %.3f tick %d d %d dt %.5f div %.3f", ms, (int)RD32(0x565940u), (int)RD32(0x57012cu), dt, div);
+    if (list) {
+        int cnt = (int)RD32(list);
+        fprintf(f, " n %d", cnt);
+        for (int k = 0; k < cnt && k < 16; k++) {
+            u32 o = RD32(list + (u32)(k + 5) * 4);
+            if (!o) continue;
+            float v[6];
+            for (int i = 0; i < 3; i++) { u32 r = RD32(o + 0xf0 + i * 4); memcpy(&v[i], &r, 4); v[3 + i] = (float)(s32)RD32(o + 0x114 + i * 4); }
+            fprintf(f, " | %x %.2f %.2f %.2f %.0f %.0f %.0f", o, v[0], v[1], v[2], v[3], v[4], v[5]);
+        }
+        fprintf(f, " | pl %x en %x", RD32(list + 16), RD32(list + 12));
+    }
+    fputc('\n', f);
+    fflush(f);
+}
+
 /* 4e2d70: the 3D part of a frame begins */
 void N_sp_begin(void)
 {
     void (*orig)(void) = rt_wrap_orig("N_sp_begin", NULL);
+    camlog_frame();
     int n = want_n();
     if (active || n < 2 || !have_args || RD32(G_MODE) != 2 || RD32(G_W) != MAIN_W || RD32(G_H) != MAIN_H ||
         RD32(G_PITCH) != MAIN_W) { orig(); return; }
@@ -96,7 +177,20 @@ static void finish(void)
     active = 0;
     int n = pass_n, w = MAIN_W, h = MAIN_H, W = w * n;
     WR32(G_W, save_w); WR32(G_H, save_h); WR32(G_PITCH, save_pitch); WR32(G_BUF, save_buf); WR32(G_ZBUF, save_z);
-    memcpy(MEM + BLK, save_blk, BLK_N);
+    /* only the window fields 4e7eb0/4e7c80/4e8130 derive from the size: the
+       same block holds the camera (angles 5150/5178/5184, matrix 5190-51b0,
+       position 51d0-51d8) the pass sets, which the fire code between frames
+       reads - that must stay as the pass left it */
+    if (sp_debug < 0) sp_debug = getenv(ENV("SPDEBUG")) != NULL;
+    for (unsigned i = 0; i < sizeof VP_FIELDS / sizeof VP_FIELDS[0]; i++) {
+        u32 o = VP_FIELDS[i], v;
+        memcpy(&v, save_blk + o, 4);
+        if (sp_debug && RD32(BLK + o) == v) {
+            static int nlog;
+            if (nlog++ < 5) rt_log("spdebug: window field %x unchanged at %dx\n", BLK + o, n);
+        }
+        WR32(BLK + o, v);
+    }
     lo_copy = realloc(lo_copy, (size_t)w * h);
     for (int y = 0; y < h; y++) {
         const u8 *s = MEM + HR_BUF + (u32)((y * n + n / 2) * W) + n / 2;
