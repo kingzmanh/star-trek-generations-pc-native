@@ -474,7 +474,15 @@ void settings_load(void)
     if (getenv(ENV("SCALE"))) opt_scale = atoi(getenv(ENV("SCALE"))) & 7;
     if (opt_scale > 4) opt_scale = 4;
     if (getenv(ENV("HIDDEN"))) opt_fullscreen = 0;
+    /* a fresh install: write every setting (best options on) so they are visible */
+    if (GetFileAttributesA(ini_path) == INVALID_FILE_ATTRIBUTES && !getenv(ENV("HIDDEN"))) {
+        void settings_save_all(void);
+        settings_save_all();
+    }
 }
+
+static void settings_save(void);
+void settings_save_all(void) { settings_save(); }
 
 static void settings_save(void)
 {
@@ -599,16 +607,17 @@ static void set_client_size(int w, int h)
 }
 
 static const char *controls_text =
-    "Mouse: point and click - walk, pick up, use.\n"
+    "Mouse: the game's own controls (Stellar Cartography, briefings, space combat panels).\n"
+    "Away missions: arrow keys move and turn, the mouse aims and uses.\n"
     "Esc: skip a movie / open the game's Options menu (save, load, quit).\n\n"
     "Alt+Enter: fullscreen / window.\n"
     "The menu bar (Video, View, Help) is shown in window mode.";
 static const char *about_text =
-    "The Neverhood - PC Native\n\n"
-    "The original 1996 game's own code (nhc.exe and the Smacker library)\n"
-    "recompiled to run natively on modern Windows: no compatibility mode,\n"
-    "no DirectDraw emulation, no registry entries, no disc to mount.\n\n"
-    "The Neverhood (c) 1996 The Neverhood, Inc. / DreamWorks Interactive.";
+    "Star Trek Generations - PC Native\n\n"
+    "The original 1997 game's own code (sgens.exe) recompiled to run\n"
+    "natively on modern Windows: no compatibility mode, no DirectDraw\n"
+    "emulation, no registry entries, no disc swapping.\n\n"
+    "Star Trek Generations (c) 1997 MicroProse / Paramount Pictures.";
 
 /* returns 1 if the command was ours */
 int present_menu_command(int id)

@@ -25,12 +25,15 @@ RT_SRCS  := $(sort $(wildcard src/rt/*.c) src/rt/apitab.c)
 OBJS := $(patsubst src/%.c,$(B)/%.o,$(GEN_SRCS) $(RT_SRCS))
 # the dev build gets the game's icon from the local CD copy (never stored in the repo)
 ICON_SRC := build/game.ico
-RES_OBJ := $(if $(wildcard $(ICON_SRC)),$(B)/game_res.o,)
+RES_OBJ := $(if $(wildcard gamedata/sgens.exe),$(B)/game_res.o,)
 
 all: $(EXE)
 
 $(EXE): $(OBJS) $(RES_OBJ)
 	$(CC) -mwindows -o $@ $^ $(LIBS)
+
+$(ICON_SRC): gamedata/sgens.exe
+	$(PY) tools/exe_icon.py $< $@
 
 $(B)/game_res.o: src/rt/game.rc $(ICON_SRC)
 	windres -I $(B) $< -o $@
