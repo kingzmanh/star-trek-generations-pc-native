@@ -21,6 +21,7 @@ int opt_fullscreen = 1, opt_filter = 2, opt_sharpen = 1, opt_fxaa = 0, opt_aspec
    picture to the window.  The game's art is 640x480: no extra detail. */
 int opt_scale = 0;
 int opt_moviecolor = 1;
+int opt_moviefull = 1;    /* movies fill the screen (only the picture, no letterbox) */
 int opt_render = 4;       /* internal resolution of the live 3D (1 = original) */   /* movies from the decoder in 24-bit colour instead of the game's 16-bit copy */
 static char ini_path[700];
 static HWND hwnd;
@@ -317,16 +318,17 @@ static void blit(IDirect3DTexture9 *src, UINT sw, UINT sh, IDirect3DPixelShader9
 }
 
 /* where the 640x480 picture goes in a cw x ch client area */
+static int pic_w = 640, pic_h = 480;   /* shape of the picture being shown (a filling movie: 2:1) */
 void present_dest_rect(int cw, int ch, int *dx, int *dy, int *dw, int *dh)
 {
     *dx = 0; *dy = 0; *dw = cw; *dh = ch;
     if (opt_aspect == 0) {
-        if (cw * 3 > ch * 4) { *dw = ch * 4 / 3; *dx = (cw - *dw) / 2; }
-        else { *dh = cw * 3 / 4; *dy = (ch - *dh) / 2; }
+        if (cw * pic_h > ch * pic_w) { *dw = ch * pic_w / pic_h; *dx = (cw - *dw) / 2; }
+        else { *dh = cw * pic_h / pic_w; *dy = (ch - *dh) / 2; }
     } else if (opt_aspect == 2) {
         int k = cw / 640 < ch / 480 ? cw / 640 : ch / 480;
         if (k < 1) k = 1;
-        *dw = 640 * k; *dh = 480 * k;
+        *dw = 640 * k; *dh = pic_h * 640 / pic_w * k;
         if (*dw > cw) *dw = cw;
         if (*dh > ch) *dh = ch;
         *dx = (cw - *dw) / 2; *dy = (ch - *dh) / 2;
@@ -338,6 +340,8 @@ void present_dest_rect(int cw, int ch, int *dx, int *dy, int *dw, int *dh)
 /* returns 0 when Direct3D is not available (window.c falls back to GDI) */
 int present_rgb(const u32 *pix, int sw, int sh)
 {
+    /* the shape of the picture: 640x480 (or N x of it) is 4:3; anything else as it is */
+    if (sw * 3 == sh * 4) { pic_w = 640; pic_h = 480; } else { pic_w = sw; pic_h = sh; }
     if (!d3d_ok) {
         /* the device can be unavailable for a while (another program in
            exclusive fullscreen): try again every 2 seconds, GDI meanwhile */
@@ -366,7 +370,7 @@ int present_rgb(const u32 *pix, int sw, int sh)
     }
     int dx, dy, dw, dh;
     present_dest_rect(cw, ch, &dx, &dy, &dw, &dh);
-    int uw = opt_scale ? 640 * opt_scale : dw, uh = opt_scale ? 480 * opt_scale : dh;
+    int uw = opt_scale ? 640 * opt_scale : dw, uh = opt_scale ? 640 * opt_scale * pic_h / pic_w : dh;
     if (!ensure_targets(uw, uh, sw, sh)) return 1;
     D3DLOCKED_RECT lr;
     if (SUCCEEDED(IDirect3DTexture9_LockRect(src_tex, 0, &lr, NULL, D3DLOCK_DISCARD))) {
@@ -469,6 +473,7 @@ void settings_load(void)
     opt_showfps = ini_int("video", "ShowFPS", 0, 0, 1);
     opt_scale = ini_int("video", "Resolution", 0, 0, 4);
     opt_moviecolor = ini_int("video", "MovieColor", 1, 0, 1);
+    opt_moviefull = ini_int("video", "MovieFill", 1, 0, 1);
     opt_render = ini_int("video", "RenderScale", 4, 1, 4);
     if (getenv(ENV("RENDER"))) opt_render = atoi(getenv(ENV("RENDER")));
     if (getenv(ENV("SCALE"))) opt_scale = atoi(getenv(ENV("SCALE"))) & 7;
@@ -495,12 +500,13 @@ static void settings_save(void)
     put("ShowFPS", opt_showfps);
     put("Resolution", opt_scale);
     put("MovieColor", opt_moviecolor);
+    put("MovieFill", opt_moviefull);
     put("RenderScale", opt_render);
 }
 
 /* ---------------- menu bar ---------------- */
 enum { ID_FILTER = 1000, ID_SHARP = 1010, ID_FXAA = 1020, ID_ASPECT = 1030, ID_WIN = 1040, ID_FULLSCREEN = 1050,
-       ID_SHOWFPS = 1051, ID_CONTROLS = 1060, ID_ABOUT = 1061, ID_SCALE = 1070, ID_MOVIECOLOR = 1080, ID_RENDER = 1090 };
+       ID_SHOWFPS = 1051, ID_CONTROLS = 1060, ID_ABOUT = 1061, ID_SCALE = 1070, ID_MOVIECOLOR = 1080, ID_RENDER = 1090, ID_MOVIEFULL = 1081 };
 static HMENU g_menu;
 static WINDOWPLACEMENT wpl = { sizeof wpl };
 
@@ -512,6 +518,7 @@ static void update_checks(void)
     CheckMenuRadioItem(g_menu, ID_SCALE, ID_SCALE + 4, ID_SCALE + opt_scale, MF_BYCOMMAND);
     CheckMenuItem(g_menu, ID_FXAA, MF_BYCOMMAND | (opt_fxaa ? MF_CHECKED : MF_UNCHECKED));
     CheckMenuItem(g_menu, ID_MOVIECOLOR, MF_BYCOMMAND | (opt_moviecolor ? MF_CHECKED : MF_UNCHECKED));
+    CheckMenuItem(g_menu, ID_MOVIEFULL, MF_BYCOMMAND | (opt_moviefull ? MF_CHECKED : MF_UNCHECKED));
     CheckMenuRadioItem(g_menu, ID_RENDER + 1, ID_RENDER + 4, ID_RENDER + opt_render, MF_BYCOMMAND);
     CheckMenuItem(g_menu, ID_FULLSCREEN, MF_BYCOMMAND | (opt_fullscreen ? MF_CHECKED : MF_UNCHECKED));
     CheckMenuItem(g_menu, ID_SHOWFPS, MF_BYCOMMAND | (opt_showfps ? MF_CHECKED : MF_UNCHECKED));
@@ -562,6 +569,7 @@ static HMENU build_menu(void)
     AppendMenuW(video, MF_POPUP, (UINT_PTR)sharp, L"&Sharpening (contrast adaptive)");
     AppendMenuW(video, MF_SEPARATOR, 0, NULL);
     AppendMenuW(video, MF_STRING, ID_MOVIECOLOR, L"&Movies in full colour  (24-bit, off = the game's 16-bit)");
+    AppendMenuW(video, MF_STRING, ID_MOVIEFULL, L"Movies &fill the screen  (off = the original letterbox in 4:3)");
     for (int k = 1; k <= 3; k++) { wchar_t t[32]; swprintf(t, 32, L"%d x %d", 640 * k, 480 * k); AppendMenuW(winm, MF_STRING, ID_WIN + k, t); }
     AppendMenuW(view, MF_POPUP, (UINT_PTR)winm, L"&Window Size");
     AppendMenuW(view, MF_STRING, ID_FULLSCREEN, L"&Fullscreen\tAlt+Enter");
@@ -627,6 +635,7 @@ int present_menu_command(int id)
     else if (id >= ID_ASPECT && id <= ID_ASPECT + 2) opt_aspect = id - ID_ASPECT;
     else if (id == ID_FXAA) opt_fxaa = !opt_fxaa;
     else if (id == ID_MOVIECOLOR) opt_moviecolor = !opt_moviecolor;
+    else if (id == ID_MOVIEFULL) opt_moviefull = !opt_moviefull;
     else if (id > ID_RENDER && id <= ID_RENDER + 4) opt_render = id - ID_RENDER;
     else if (id >= ID_SCALE && id <= ID_SCALE + 4) opt_scale = id - ID_SCALE;
     else if (id == ID_SHOWFPS) { opt_showfps = !opt_showfps; if (!opt_showfps) SetWindowTextA(hwnd, GAME_TITLE); }

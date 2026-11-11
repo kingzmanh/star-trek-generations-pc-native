@@ -70,6 +70,21 @@ static int movie_row_match(const u16 *row, const u32 *src, int w)
     return 1;
 }
 
+/* does the picture sit at row y of the screen?  2 = yes (rows with detail
+   matched), 1 = only flat rows to compare (dark space: could be anywhere), 0 = no */
+static int movie_match_at(const u8 *base, int pitch, int y, const u32 *mf, int mw, int mh)
+{
+    int detail = 0;
+    for (int k = 1; k <= 8; k++) {
+        int r = k * mh / 9;
+        const u32 *src = mf + r * mw;
+        if (!movie_row_match((const u16 *)(base + (y + r) * pitch), src, mw)) return 0;
+        for (int x = 1; x < mw; x += 5) if (src[x] != src[0]) { detail = 1; break; }
+    }
+    return detail ? 2 : 1;
+}
+
+extern int opt_moviefull;
 static int present_movie(void)
 {
     if (!opt_moviecolor || primary->bpp != 16 || now_ms() - vfw_last_ms > 300) { movie_y = -1; return 0; }
@@ -77,15 +92,39 @@ static int present_movie(void)
     const u32 *mf = vfw_last_frame(&mw, &mh);
     if (!mf || mw != primary->w || mh > primary->h) return 0;
     const u8 *base = MEM + primary->mem;
-    int probe = mh / 2;   /* a middle row: top rows of a fading picture can be black */
-    if (movie_y < 0 || !movie_row_match((const u16 *)(base + (movie_y + probe) * primary->pitch), mf + probe * mw, mw)) {
+    int pitch = primary->pitch, centre = (primary->h - mh) / 2;
+    /* the place found before, the centre (where the game puts its movies), then a search
+       that only trusts rows with detail */
+    if (!(movie_y >= 0 && movie_match_at(base, pitch, movie_y, mf, mw, mh)) &&
+        !(movie_y < 0 && movie_match_at(base, pitch, centre, mf, mw, mh) && (movie_y = centre, 1))) {
         movie_y = -1;
         for (int y = 0; y + mh <= primary->h; y++)
-            if (movie_row_match((const u16 *)(base + (y + probe) * primary->pitch), mf + probe * mw, mw)) { movie_y = y; break; }
+            if (movie_match_at(base, pitch, y, mf, mw, mh) == 2) { movie_y = y; break; }
         if (movie_y < 0) return 0;
     }
     if (!movie_buf) movie_buf = malloc(640 * 480 * 4);
     int w = primary->w, h = primary->h;
+    if (opt_moviefull) {
+        /* fill the screen: only the movie's rows, plus whatever the game shows
+           under or over it (subtitles) */
+        int top = movie_y, bot = movie_y + mh;
+        for (int y = 0; y < h; y++) {
+            if (y >= movie_y && y < movie_y + mh) continue;
+            const u16 *s = (const u16 *)(base + y * pitch);
+            for (int x = 0; x < w; x++) if (s[x] & 0xe79c) { if (y < top) top = y; if (y + 1 > bot) bot = y + 1; break; }
+        }
+        for (int y = top; y < bot; y++) {
+            u32 *d = movie_buf + (y - top) * w;
+            if (y >= movie_y && y < movie_y + mh) { memcpy(d, mf + (y - movie_y) * mw, w * 4); continue; }
+            const u16 *s = (const u16 *)(base + y * pitch);
+            for (int x = 0; x < w; x++) {
+                u32 c = s[x], r = (c >> 11) & 31, g = (c >> 5) & 63, b = c & 31;
+                d[x] = (r << 3 | r >> 2) << 16 | (g << 2 | g >> 4) << 8 | (b << 3 | b >> 2);
+            }
+        }
+        present_frame32(movie_buf, w, bot - top);
+        return 1;
+    }
     for (int y = 0; y < h; y++) {
         u32 *d = movie_buf + y * w;
         if (y >= movie_y && y < movie_y + mh) { memcpy(d, mf + (y - movie_y) * mw, w * 4); continue; }
@@ -328,17 +367,29 @@ static void dd_ok4(void) { RET(DD_OK, 4); }
 /* ---------------- IDirectDrawSurface ---------------- */
 static void s_QueryInterface(void) { Surf *s = S(ARG(0)); if (s) s->refs++; WR32(ARG(2), ARG(0)); RET(DD_OK, 3); }
 static void s_AddRef(void) { Surf *s = S(ARG(0)); if (s) s->refs++; RET(s ? s->refs : 0, 1); }
+/* A released surface stays usable for a while: the movie player's thread
+   can still lock the old primary after the game has dropped it (on Windows
+   the call would just fail with "surface lost").  The last 16 are kept. */
+#define NZOMBIE 16
+static Surf *zombies[NZOMBIE];
+static int zombie_next;
 static void surf_free(Surf *s)
 {
-    surfs[RD32(s->obj + 4)] = NULL;
-    gfree(s->mem);
-    gfree(s->obj);
-    free(s);
+    Surf *old = zombies[zombie_next];
+    zombies[zombie_next] = s;
+    zombie_next = (zombie_next + 1) % NZOMBIE;
+    if (old) {
+        surfs[RD32(old->obj + 4)] = NULL;
+        gfree(old->mem);
+        gfree(old->obj);
+        free(old);
+    }
 }
 static void s_Release(void)
 {
     Surf *s = S(ARG(0));
     if (!s) RET(0, 1);
+    if (s->refs <= 0) RET(0, 1);   /* already released (kept alive above) */
     if (--s->refs > 0) RET(s->refs, 1);
     if (s == primary) primary = NULL;
     if (s->back) surf_free(s->back);

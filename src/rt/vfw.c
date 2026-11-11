@@ -249,7 +249,13 @@ void api_ICDecompress(void)
     Codec *c = C(ARG(0));
     if (!c) RETC(0xffffffffu);
     u32 in = ARG(2), data = ARG(3), out = ARG(4), bits = ARG(5);
+    /* biSizeImage of the stream format is not this frame's size: the Cinepak
+       frame header carries its own length */
     u32 size = RD32(in + 20);
+    if (data) {
+        u32 flen = BE24(MEM + data + 1);
+        if (flen >= 10 && flen < (8u << 20)) size = flen;
+    }
     if (!c->frames++) { log_bi("decompress in", in); log_bi("decompress out", out); }
     if (size) decode_frame(c, MEM + data, size);
     vfw_frame_counter++;
