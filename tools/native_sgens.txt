@@ -13,3 +13,5 @@
 4d6b16 N_sound_playing wrap
 47b83e N_combat_idle wrap
 4b4e10 N_dre_use wrap
+4db4f9 N_snd_error wrap
+4d1620 N_res_error wrap

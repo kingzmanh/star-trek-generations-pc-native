@@ -177,6 +177,7 @@ const char *thunk_name_of(u32 a)
 }
 
 static int trace_api = -1;
+static u32 trace_from;   /* <ENV>TRACEAPI=ms: trace from that test time on */
 static int api_stat_on;
 static s64 *api_time;
 static u32 *api_calls;
@@ -187,7 +188,8 @@ static void call_thunk(u32 target, u32 at)
     NativeFn fn = thunk_fn[i];
     rt_tail_ret = 0;
     if (!fn) rt_fatal("call to unknown native %08x (%s) from %08x", target, thunk_name[i] ? thunk_name[i] : "?", at);
-    if (trace_api) {
+    extern u32 win_time(void);
+    if (trace_api && win_time() >= trace_from) {
         u32 sp = cpu.r[R_ESP];
         int th = thr_current();
         rt_log("api [%d] %s from %08x (%08x %08x %08x %08x) esp %08x ebp %08x", th, thunk_name[i], RD32(sp), RD32(sp + 4), RD32(sp + 8), RD32(sp + 12), RD32(sp + 16), sp, cpu.r[R_EBP]);
@@ -356,6 +358,7 @@ int main(int argc, char **argv)
     rt_logf = fopen(logp, "w");
     rt_log(GAME_TITLE " - PC native runtime\nroot: %s\n", rt_root);
     trace_api = getenv(ENV("TRACEAPI")) != NULL;
+    if (trace_api) trace_from = (u32)atoi(getenv(ENV("TRACEAPI")));
     api_stat_on = getenv(ENV("APISTAT")) != NULL;
     if (getenv(ENV("HIDDEN"))) SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX | SEM_NOOPENFILEERRORBOX);
 

@@ -106,6 +106,7 @@ void thr_init(void);
 void thr_yield(void);             /* let the other guest threads run a slice */
 int thr_current(void);
 u32 thr_tls_get(u32 i);
+void thr_sync_free(int s);           /* a mutex / event's last handle was closed */
 void thr_wait_qpc(long long until);  /* wait for a QueryPerformanceCounter time, other threads run */
 int thr_wait_handle(u32 h, u32 ms);   /* 1 = signalled (acquired), 0 = timeout */
 

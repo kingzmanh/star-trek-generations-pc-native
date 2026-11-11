@@ -4,8 +4,9 @@
 #define GAME_SHORT "generations"
 #define GAME_ID    "StarTrekGenerations"
 #define GAME_ENV   "STG_"
-/* files that identify the game's CDs (either disc) */
-#define GAME_CD_FILES { "GENS\\COMMON.DAT", "GENS\\OPTIONS.DAT", "GENS\\STELLAR.DAT", NULL }
+/* files that identify the game's two CDs */
+#define GAME_CD_FILES  { "SUPP.Z", "GENS\\STELLAR.DAT", "GENS\\AMARGOS1.DAT", NULL }
+#define GAME_CD2_FILES { "GENS\\STELLAR.DAT", "GENS\\AMARGOS2.DAT", NULL }
 /* icon: taken from the game exe's own resources */
 #define GAME_ICON_ICO NULL
 #define GAME_ICON_LBM NULL

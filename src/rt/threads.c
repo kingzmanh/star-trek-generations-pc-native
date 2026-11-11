@@ -14,7 +14,7 @@
 #include <string.h>
 #include "rt.h"
 
-#define NTHR 16
+#define NTHR 64   /* live guest threads; finished ones' slots are reused */
 #define NTLS 64
 #define GSTACK (1u << 20)          /* guest stack of a new thread */
 
@@ -49,6 +49,11 @@ static int sync_new(int kind)
         if (!sync[i].used) { memset(&sync[i], 0, sizeof sync[i]); sync[i].used = 1; sync[i].kind = kind; sync[i].owner = -1; return i; }
     rt_fatal("out of sync objects");
     return -1;
+}
+
+void thr_sync_free(int s)
+{
+    if (s >= 0 && s < NSYNC) sync[s].used = 0;
 }
 
 /* ---------------- scheduler ---------------- */
@@ -88,7 +93,7 @@ static int try_acquire(u32 h)
 {
     GH *g = gh_get(h);
     if (!g) return 1;
-    if (g->kind == GH_THREAD) return thr[g->obj].finished;
+    if (g->kind == GH_THREAD) return g->obj < 0 || thr[g->obj].finished;   /* obj -1: finished, slot reused */
     if (g->kind != GH_MUTEX && g->kind != GH_EVENT) return 1;
     Sync *s = &sync[g->obj];
     if (s->kind == GH_MUTEX) {
@@ -169,10 +174,26 @@ void thr_init(void)
 /* CreateThread(sec, stack, fn, param, flags, idp) */
 static void api_CreateThread(void)
 {
+    /* a free slot, else one whose thread has finished: the game starts a
+       thread for every movie and sound stream, so a session runs through
+       far more threads than are ever alive at once (with no reuse, the
+       17th CreateThread failed: a new game's music stream never started
+       and its script waited forever) */
     int i;
     for (i = 1; i < NTHR; i++) if (!thr[i].used) break;
-    if (i == NTHR) RET(0, 6);
+    if (i == NTHR)
+        for (i = 1; i < NTHR; i++) if (thr[i].finished && i != cur) break;
+    if (i == NTHR) { rt_log("CreateThread: all %d thread slots in use\n", NTHR); RET(0, 6); }
     GThread *t = &thr[i];
+    if (t->used) {   /* recycle: the old thread's handle stays valid as "finished" */
+        GH *g = gh_get(t->handle);
+        if (g && g->kind == GH_THREAD && g->obj == i) { g->obj = -1; g->aux = t->exit_code; }
+        if (t->fiber) DeleteFiber(t->fiber);
+        if (t->stack_lo) gfree(t->stack_lo);
+        if (t->teb) gfree(t->teb);
+        for (int k = 0; k < NSYNC; k++)   /* mutexes it died holding are abandoned, not the new thread's */
+            if (sync[k].kind == GH_MUTEX && sync[k].owner == i) { sync[k].owner = -1; sync[k].count = 0; }
+    }
     memset(t, 0, sizeof *t);
     t->used = 1;
     t->id = 0x48 + 4 * i;
@@ -230,8 +251,9 @@ static void api_TerminateThread(void)
 static void api_SuspendThread(void)
 {
     int i = thread_of(ARG(0));
-    if (i < 0) RET(0xffffffffu, 1);
+    if (i < 0) RET(gh_get(ARG(0)) ? 0 : 0xffffffffu, 1);   /* finished thread whose slot was reused */
     u32 prev = thr[i].suspend++;
+    if (getenv(ENV("THREADDEBUG"))) rt_log("SuspendThread %d (fn %08x) from %08x -> count %u\n", i, thr[i].fn, RD32(cpu.r[R_ESP]), thr[i].suspend);
     if (i == cur) while (thr[cur].suspend) { thr[cur].blocked = 1; thr_yield(); }
     thr[cur].blocked = 0;
     RET(prev, 1);
@@ -240,16 +262,21 @@ static void api_SuspendThread(void)
 static void api_ResumeThread(void)
 {
     int i = thread_of(ARG(0));
-    if (i < 0) RET(0xffffffffu, 1);
+    if (i < 0) RET(gh_get(ARG(0)) ? 0 : 0xffffffffu, 1);
     u32 prev = thr[i].suspend;
     if (prev) thr[i].suspend--;
+    if (i && getenv(ENV("THREADDEBUG"))) rt_log("ResumeThread %d (fn %08x) from %08x -> count %u\n", i, thr[i].fn, RD32(cpu.r[R_ESP]), thr[i].suspend);
     RET(prev, 1);
 }
 
 static void api_GetExitCodeThread(void)
 {
     int i = thread_of(ARG(0));
-    if (i < 0) RET(0, 2);
+    if (i < 0) {
+        GH *g = gh_get(ARG(0));
+        if (g && g->kind == GH_THREAD) { WR32(ARG(1), g->aux); RET(1, 2); }   /* finished, slot reused */
+        RET(0, 2);
+    }
     WR32(ARG(1), thr[i].finished ? thr[i].exit_code : 259 /* STILL_ACTIVE */);
     RET(1, 2);
 }

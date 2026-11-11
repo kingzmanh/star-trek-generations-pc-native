@@ -280,6 +280,12 @@ static void api_CloseHandle(void)
         if (g->kind == 1 && g->h) CloseHandle(g->h);
         if (g->kind == 2 && g->h) FindClose(g->h);
         g->used = 0;
+        if (g->kind == GH_MUTEX || g->kind == GH_EVENT) {   /* the last handle to it: free the object */
+            int other = 0;
+            for (int i = 4; i < MAXF; i++)
+                if (ghandles[i].used && ghandles[i].kind == g->kind && ghandles[i].obj == g->obj) other = 1;
+            if (!other) thr_sync_free(g->obj);
+        }
     }
     RET(1, 1);
 }
