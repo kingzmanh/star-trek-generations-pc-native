@@ -117,7 +117,9 @@ static void script_init(void)
         int used = 0;
         if (sscanf(c, "%u,%u,%u%n", &x, &y, &ms, &used) < 3) break;
         c += used;
-        evs[nev++] = (Ev){ ms, 1, x, y, 150, 0 };
+        int kind = 1;
+        if (c[0] == ',' && c[1] == 'r') { kind = 2; c += 2; }   /* "x,y,ms,r": right button */
+        evs[nev++] = (Ev){ ms, kind, x, y, 150, 0 };
         if (*c == ';') c++;
     }
     const char *s = getenv(ENV("SHOT"));
@@ -161,16 +163,20 @@ static void script_poll(void)
                 di_motion(e->a | (e->b << 16));
                 wm_mouse(WM_MOUSEMOVE, 0, e->a, e->b);
             }
-        } else if (e->done == 1 && e->kind == 1 && t >= e->at + 300) {
+        } else if (e->done == 1 && e->kind != 0 && t >= e->at + 300) {
+            int r = e->kind == 2;
             e->done = 3;
-            keys[VK_LBUTTON] = 0x80;
+            keys[r ? VK_RBUTTON : VK_LBUTTON] = 0x80;
             win_input_count++;
-            di_mouse_button(0, 1);
-            wm_mouse(WM_LBUTTONDOWN, 1, e->a, e->b);
+            di_mouse_button(r, 1);
+            wm_mouse(r ? WM_RBUTTONDOWN : WM_LBUTTONDOWN, r ? 2 : 1, e->a, e->b);
         } else if ((e->done == 1 && e->kind == 0 && t >= e->at + e->hold) || (e->done == 3 && t >= e->at + 300 + e->hold)) {
             e->done = 2;
             if (e->kind == 0) key_event(e->a, 0);
-            else { keys[VK_LBUTTON] = 0; di_mouse_button(0, 0); wm_mouse(WM_LBUTTONUP, 0, e->a, e->b); }
+            else {
+                int r = e->kind == 2;
+                keys[r ? VK_RBUTTON : VK_LBUTTON] = 0; di_mouse_button(r, 0); wm_mouse(r ? WM_RBUTTONUP : WM_LBUTTONUP, 0, e->a, e->b);
+            }
         }
     }
     if (quit_at && t >= quit_at) {

@@ -64,6 +64,17 @@ void N_dre_render(void)
     int n = set_n;
     lo_buf = ARG(0);
     lo_pitch = ARG(1);
+    if (dre_hires_debug) {   /* game time (546d68 = this frame's step, ms) vs real time */
+        static u32 t0, frames, game_ms;
+        u32 t = now_ms();
+        if (!t0) t0 = t;
+        frames++; game_ms += RD32(0x546d68);
+        if (t - t0 >= 5000) {
+            rt_log("dre clock: %u frames in %u ms real, %u ms game (x%.2f), min step %u\n", frames, t - t0, game_ms,
+                   (double)game_ms / (t - t0), RD32(0x546d6c));
+            t0 = t; frames = 0; game_ms = 0;
+        }
+    }
     dre_last_ms = now_ms();
     if (n < 2) { frame_n = 1; orig(); return; }
     int W = base_w * n, H = base_h * n;
@@ -104,6 +115,16 @@ void N_dre_pick(void)
         if (y >= 0) cpu.r[R_EDX] = (u32)(y * n + n / 2);
     }
     rt_wrap_orig("N_dre_pick", NULL)();
+}
+
+/* 4b4e10: "use" at the picked point (STG_DREDEBUG logs its inputs) */
+void N_dre_use(void)
+{
+    if (dre_hires_debug)
+        rt_log("dre use: n %d pick %d,%d depth %08x near %08x cx %08x cy %08x k %08x pos %08x %08x %08x item %08x\n", set_n,
+               (s32)RD32(0x579fd0), (s32)RD32(0x579fd4), RD32(0x579fc4), RD32(0x57d998), RD32(0x57d840), RD32(0x57aeb0),
+               RD32(0x57bec0), RD32(0x57d9b8), RD32(0x57d9c0), RD32(0x57d9c4), RD32(0x57d960));
+    rt_wrap_orig("N_dre_use", NULL)();
 }
 
 /* ddraw.c: every blit.  The DRE picture goes to an offscreen composite
